@@ -1,0 +1,32 @@
+{
+  "name": "logiflow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "vite build",
+    "start": "node server.js --production",
+    "test": "node --test tests/*.test.js",
+    "start:render": "node server.js --production",
+    "build:vercel": "node scripts/configure-hosting.mjs --check && vite build",
+    "configure:hosting": "node scripts/configure-hosting.mjs"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@napi-rs/canvas": "^1.0.13",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "express": "^5.1.0",
+    "lucide-react": "^0.468.0",
+    "multer": "^2.0.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tesseract.js": "^7.0.0",
+    "vite": "^7.1.0"
+  },
+  "engines": {
+    "node": "24.x"
+  }
+}

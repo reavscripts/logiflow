@@ -1,0 +1,24 @@
+node_modules/
+dist/
+data/
+.env
+*.log
+
+.env.*
+!.env.example
+release/
+tmp/
+output/
+tmp-*.png
+
+# Archivi locali, backup e configurazione personale
+*.zip
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+.vercel/
+.DS_Store
+Thumbs.db
+*.pem
+*.key

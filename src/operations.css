@@ -1,0 +1,34 @@
+.sidebar-spacer{flex:1;min-height:30px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.customer-boxes{margin:0 0 25px}.customer-boxes>.section-title{margin-bottom:12px}.customer-boxes h2{font-size:15px;margin:0}.customer-boxes .hint{margin:0}.box-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:15px}.box-grid article{border:1px solid #dce5d4;background:#f6f9f0;padding:20px;border-radius:9px}.box-grid h3{font-size:13px;margin:0}.box-grid svg{color:#7e9362}.box-position{display:flex;align-items:center;gap:7px;font-size:12px;color:#74836e;min-height:25px;overflow-wrap:anywhere}.box-position svg{flex-shrink:0}.configure-box{display:flex;margin:0 0 20px}.box-save{margin-top:20px}.position-help{margin:0 0 14px}input[readonly]{background:#f4f6f3;color:#74816b}footer>.copyright{letter-spacing:0;font-size:12px;font-weight:600;color:#6a7b82}@media(max-width:760px){.box-grid{grid-template-columns:1fr}.sidebar-spacer{display:none}footer>.copyright{display:block}.footer-description{display:none}}
+
+.import-zone{min-height:170px;margin-top:0!important;text-align:center}.import-zone.dragging{background:#e5f1c8;border-color:#77963d}.import-result{display:flex;gap:12px;align-items:center;background:#f4f7ef;border-radius:8px;padding:14px;margin-bottom:20px;font-size:12px;overflow-wrap:anywhere}.import-result small{color:#87917d;font-size:10px;margin-top:5px}.verify-code{margin:0 0 20px;font-size:12px}.pdf-import{margin-bottom:20px}
+
+.a88-panel{border:1px solid #dce5cd;background:#f9fbf4;padding:18px;border-radius:9px;margin-top:22px}.a88-panel h3{margin:0}.a88-panel label{margin-top:14px}.a88-actions{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.a88-upload{flex:1;min-width:200px}.a88-upload input{font-size:11px}.a88-ok,.a88-missing{font-size:9px;font-weight:500;margin-top:8px}.a88-ok{color:#388563}.a88-missing{color:#aa7a23}.container-code>div+div{margin-top:5px}
+
+.public-search-title{gap:40px;margin-bottom:32px}.public-search-title>div:first-child{flex:1;min-width:0}.page-title.public-search-title h1{font-size:clamp(27px,2.5vw,40px);line-height:1.25;letter-spacing:-1px;max-width:780px;margin:0}.public-search-title .hero-art{flex-shrink:0}@media(max-width:1150px){.public-search-title{gap:20px}}@media(max-width:760px){.public-search-title{margin-bottom:25px}.page-title.public-search-title h1{font-size:28px;letter-spacing:-.7px}}
+.operations-mobile{display:none}
+@media(max-width:760px){
+ .operations-desktop{display:none}
+ .operations-mobile{display:grid;gap:14px;padding:0 14px 14px;min-width:0}
+ .operations-mobile:empty{display:none}
+ .operation-card{min-width:0;border:1px solid #dfe6e2;border-radius:10px;padding:17px;background:#fff}
+ .operation-card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+ .operation-card-heading>strong{font-size:13px;overflow-wrap:anywhere}
+ .operation-card-heading .badge{font-size:11px;padding:7px 9px}
+ .mobile-field-label{display:block;font-size:10px;color:#83928e;margin-bottom:8px;font-weight:500}
+ .operation-containers ul{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+ .operation-containers li{display:flex;align-items:center;gap:10px;background:#f5f7f4;border-radius:6px;padding:10px 11px;font-size:16px;font-weight:700;letter-spacing:.5px;font-variant-numeric:tabular-nums}
+ .operation-containers li svg{flex-shrink:0;color:#829671}
+ .operation-a88{display:flex;align-items:center;gap:7px;font-size:11px;margin:12px 0 0}
+ .operation-position{display:flex;align-items:flex-start;gap:9px;margin-top:18px;padding-top:15px;border-top:1px solid #edf0ed;font-size:12px;line-height:1.6}
+ .operation-position>svg{flex-shrink:0;color:#849678;margin-top:2px}
+ .operation-position>div{min-width:0;overflow-wrap:anywhere}
+ .operation-position .mobile-field-label{margin-bottom:4px}
+ .operation-position strong,.operation-position div>span:last-child{display:block}
+ .operation-position strong{font-size:12px;font-weight:600}
+ .operation-position div>span:last-child{color:#7b8983}
+ .operation-card-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:17px}
+ .operation-card-actions>span{display:flex;align-items:center;gap:6px;color:#7b8983;font-size:11px;white-space:nowrap}
+ .operation-card-actions button{min-height:44px;padding:10px 12px;font-size:12px;font-weight:600;background:#f4f8eb}
+ .table-card>.toolbar{padding:16px 14px}
+ .table-card>.toolbar>select{min-width:0;min-height:44px}
+}
