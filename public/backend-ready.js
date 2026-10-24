@@ -26,7 +26,7 @@
     })().finally(() => { pending = null; });
     return pending;
   }
-  window.logiflowBackend = { ensureReady, getState: () => state, invalidate: () => { checkedAt = 0; } };
+  window.logiflowBackend = { ensureReady, getState: () => state, invalidate: () => { checkedAt = 0; ensureReady().catch(() => {}); } };
   ensureReady().catch(() => {});
   window.addEventListener('focus', () => ensureReady().catch(() => {}));
 })();

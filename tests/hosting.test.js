@@ -43,5 +43,9 @@ test('Risveglio condiviso, retry HTML transitorio e riuso della connessione',asy
  await Promise.all([window.logiflowBackend.ensureReady(),window.logiflowBackend.ensureReady()]);
  assert.equal(probes,2);assert.equal(window.logiflowBackend.getState(),'ready');
  await window.logiflowBackend.ensureReady();assert.equal(probes,2);
- window.logiflowBackend.invalidate();await window.logiflowBackend.ensureReady();assert.equal(probes,3);
+ window.logiflowBackend.invalidate();
+ assert.equal(window.logiflowBackend.getState(),'connecting');
+ assert.equal(probes,3); // A lost connection starts recovery even without another user action.
+ await window.logiflowBackend.ensureReady();assert.equal(probes,3);
+ assert.equal(window.logiflowBackend.getState(),'ready');
 });

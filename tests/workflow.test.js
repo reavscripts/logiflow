@@ -58,6 +58,15 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   r=await call(`/dossiers/${imported.id}/documents`);const importedDocs=await r.json();assert.equal(importedDocs.length,1);assert.equal(importedDocs[0].name,'operazione.pdf');
   r=await call(`/documents/${importedDocs[0].id}`);assert.deepEqual(new Uint8Array(await r.arrayBuffer()),bytes);
   r=await call('/dossiers','POST',{...item,container:'CHSU8170741',importToken:recognition.importToken});assert.equal(r.status,400);
+  r=await fetch(base+'/analyze-pdf?manual=1',{method:'POST',body:input});assert.equal(r.status,401);
+  r=await fetch(base+'/analyze-pdf?manual=1',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);
+  const manual=await r.json();assert.equal(manual.manual,true);assert.equal(manual.pages,1);assert.deepEqual(manual.candidates,[]);assert.ok(manual.importToken);
+  r=await call('/dossiers','POST',{...item,deposited:false,container:'SELU4739983',containers:['SELU4739983'],importToken:manual.importToken});assert.equal(r.status,201);
+  const manualId=(await r.json()).id;
+  r=await call(`/dossiers/${manualId}/documents`);const manualDocs=await r.json();assert.equal(manualDocs.length,1);
+  r=await call(`/documents/${manualDocs[0].id}`);assert.deepEqual(new Uint8Array(await r.arrayBuffer()),bytes);
+  const invalidPdf=new FormData();invalidPdf.append('file',new Blob(['%PDF-invalid']),'invalid.pdf');
+  r=await fetch(base+'/analyze-pdf?manual=1',{method:'POST',headers:{Cookie:cookie},body:invalidPdf});assert.equal(r.status,400);
   const multi={...item,container:'HLBU8225693',containers:['HLBU8225693','CAIU4229738'],deposited:false};
   r=await call('/dossiers','POST',{...multi,deposited:true});assert.equal(r.status,400);
   r=await call('/dossiers','POST',multi);assert.equal(r.status,201);const multiId=(await r.json()).id;

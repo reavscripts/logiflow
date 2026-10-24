@@ -5,6 +5,7 @@ import { installDepartures, departureState } from './departures.js';
 import { generateA88 } from './a88.js';
 import { generateFuoriOrario, romeDate, validateWindow } from './fuori-orario.js';
 import { recognizePdf } from './pdf-recognition.js';
+import { PDFDocument } from 'pdf-lib';
 import multer from 'multer';
 import { openDatabase } from './database.js';
 import { documentStorage } from './storage.js';
@@ -464,7 +465,7 @@ app.post('/api/dossiers/:id/a88', upload.single('file'), async (req, res) => {
   }
 });
 app.post('/api/analyze-pdf', limit, (req, res, next) => {
-  if (analyzing) return res.status(429).json({
+  if (analyzing && req.query.manual !== '1') return res.status(429).json({
     error: 'È già in corso un’analisi PDF. Riprova tra poco.'
   });
   next();
@@ -472,12 +473,18 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
   if (!req.file || req.file.buffer.subarray(0, 5).toString() !== '%PDF-' || !req.file.originalname.toLowerCase().endsWith('.pdf')) return res.status(400).json({
     error: 'Carica un file PDF valido.'
   });
-  if (analyzing) return res.status(429).json({
+  if (analyzing && req.query.manual !== '1') return res.status(429).json({
     error: 'È già in corso un’analisi PDF. Riprova tra poco.'
   });
-  analyzing = true;
+  const manual = req.query.manual === '1';
+  if (!manual) analyzing = true;
   try {
-    const result = await recognizePdf(req.file.buffer);
+    let result;
+    if (manual) {
+      const pdf = await PDFDocument.load(req.file.buffer);
+      if (pdf.getPageCount() > 20) throw Error('Il PDF supera 20 pagine.');
+      result = {candidates: [], pages: pdf.getPageCount(), ocrPages: 0, manual: true};
+    } else result = await recognizePdf(req.file.buffer);
     for (const [key, value] of imports) if (value.owner === req.token || value.until < Date.now()) imports.delete(key);
     if (imports.size >= 10) return res.status(429).json({
       error: 'Troppi PDF in attesa di salvataggio. Riprova tra qualche minuto.'
@@ -498,7 +505,7 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
       error: e.message
     });
   } finally {
-    analyzing = false;
+    if (!manual) analyzing = false;
   }
 });
 app.post('/api/dossiers/:id/documents', upload.array('files', 15), async (req, res) => {

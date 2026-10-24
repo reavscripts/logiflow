@@ -13,6 +13,7 @@ async function api(url, options={}) {
  let r;
  try {r=await fetch('/api'+url,{...options,signal:AbortSignal.timeout(150000),headers:options.body instanceof FormData?{}:{'Content-Type':'application/json'}});}
  catch {window.logiflowBackend?.invalidate();throw Error('Connessione interrotta. Verifica lo stato dell’operazione prima di riprovare.');}
+ if([502,503,504].includes(r.status))window.logiflowBackend?.invalidate();
  if(!r.headers.get('content-type')?.includes('application/json')){window.logiflowBackend?.invalidate();throw Error('Il server è temporaneamente indisponibile. Verifica lo stato dell’operazione prima di riprovare.');}
  const data=await r.json();if(!r.ok)throw new Error(data.error||'Operazione non riuscita');return data;
 }

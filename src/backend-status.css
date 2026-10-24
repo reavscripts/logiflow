@@ -1,0 +1,11 @@
+.server-notice{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:50;width:min(740px,calc(100% - 32px));display:flex;align-items:center;gap:16px;padding:20px 24px;border:1px solid #62764e;border-radius:14px;background:#132b36;color:#fff;box-shadow:0 12px 45px #07182040}
+.server-notice-icon{flex-shrink:0;color:#d7ed9c;display:flex}
+.server-notice-copy{flex:1;min-width:0}
+.server-notice-copy strong{font-size:15px;color:#fff}
+.server-notice-copy p{margin:7px 0 0;font-size:12px;line-height:1.6;color:#d2dde0}
+.server-notice-time{font-size:11px;white-space:nowrap;color:#d7ed9c;font-variant-numeric:tabular-nums}
+.server-notice-retry{flex-shrink:0;border:0;border-radius:7px;padding:11px 13px;background:#d7ed9c;color:#132b36;font-size:12px;font-weight:700;cursor:pointer}
+.server-notice-retry:focus-visible{outline:3px solid white;outline-offset:3px}
+.server-notice.is-offline{border-color:#cba576}
+@media(max-width:600px){.server-notice{bottom:12px;padding:16px;gap:12px;flex-wrap:wrap}.server-notice-copy{flex-basis:calc(100% - 44px)}.server-notice-time,.server-notice-retry{margin-left:39px}}
+@media(prefers-reduced-motion:reduce){.server-notice .spin{animation:none}}

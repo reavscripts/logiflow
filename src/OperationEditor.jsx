@@ -6,6 +6,8 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
  const [docs,setDocs]=useState([]),[files,setFiles]=useState([]),[category,setCategory]=useState('Bolletta doganale');
  const [busy,setBusy]=useState(false),[analyzing,setAnalyzing]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [containerText,setContainerText]=useState((initial.containers||[initial.container]).filter(Boolean).join('\n')),[reference,setReference]=useState('');
+ const [manual,setManual]=useState(false),[selectedPdf,setSelectedPdf]=useState(null),[elapsed,setElapsed]=useState(0);
+ React.useEffect(()=>{if(!analyzing)return;setElapsed(0);const start=Date.now();const timer=setInterval(()=>setElapsed(Math.floor((Date.now()-start)/1000)),1000);return ()=>clearInterval(timer);},[analyzing]);
  const containers=containerText.toUpperCase().split(/[\s,;]+/).filter(Boolean);
  const multi=containers.length>1;
  const codeSignature=[...containers].sort().join(',');
@@ -17,16 +19,16 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
  const change=(key,value)=>{setItem(s=>({...s,[key]:value}));setMessage('');};
  const load=async id=>setDocs(await api(`/dossiers/${id}/documents`));
  React.useEffect(()=>{if(initial.id)load(initial.id).catch(e=>setError(e.message));},[initial.id]);
- async function analyze(selected) {
+ async function analyze(selected,skipRecognition=manual) {
   if(busy||analyzing)return;
   setError('');setMessage('');setSource(null);setCandidates([]);setVerified(false);setContainerText('');change('container','');
   if(selected.length!==1){setError('Seleziona un solo PDF per creare l’operazione.');return;}
   const file=selected[0];
   if(!file.name.toLowerCase().endsWith('.pdf')||file.size>20*1024*1024){setError('Carica un PDF di massimo 20 MB.');return;}
-  setAnalyzing(true);
+  setSelectedPdf(file);setAnalyzing(true);
   try {
    const form=new FormData();form.append('file',file);
-   const result=await api('/analyze-pdf',{method:'POST',body:form});
+   const result=await api('/analyze-pdf'+(skipRecognition?'?manual=1':''),{method:'POST',body:form});
    setSource({...result,name:file.name});setCandidates(result.candidates);
    setContainerText(result.candidates.join('\n'));if(result.candidates.length)change('container',result.candidates[0]);
   }catch(e){setError(e.message);}finally{setAnalyzing(false);}
@@ -45,15 +47,18 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
   {!item.id&&<section className="pdf-import">
    <label className={`upload-zone import-zone ${dragging?'dragging':''}`} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);analyze(Array.from(e.dataTransfer.files));}}>
     {analyzing?<LoaderCircle size={28} className="spin"/>:<Upload size={28}/>}
-    <strong>{analyzing?'Lettura del PDF e riconoscimento contenitore…':'Trascina qui il PDF o seleziona un file'}</strong>
+    <strong>{analyzing?(manual?'Caricamento PDF…':'Lettura del PDF e riconoscimento contenitore…'):'Trascina qui il PDF o seleziona un file'}</strong>
     <span>Riconoscimento automatico del contenitore · PDF fino a 20 MB e 20 pagine</span>
     <input aria-label="PDF da analizzare" type="file" accept=".pdf,application/pdf" disabled={analyzing||busy} onChange={e=>{analyze(Array.from(e.target.files));e.target.value='';}}/>
    </label>
+   {analyzing&&<div role="status"><p className="hint">{selectedPdf?.name} · Attesa: {elapsed}s</p><p className="hint">Le scansioni richiedono più tempo. L’analisi può durare fino a circa 2 minuti; al termine potrai verificare i codici.</p>{elapsed>=30&&<p className="hint">Il riconoscimento è ancora in corso. Se non riesce, potrai caricare il PDF senza riconoscimento e inserire i contenitori manualmente.</p>}</div>}
+   {!analyzing&&<label className="check-label"><input type="checkbox" checked={manual} disabled={busy} onChange={e=>setManual(e.target.checked)}/>Inserisci i contenitori manualmente (salta il riconoscimento)</label>}
+   {!analyzing&&!source&&selectedPdf&&error&&<button type="button" className="secondary full" disabled={busy} onClick={()=>{setManual(true);analyze([selectedPdf],true);}}>Continua con lo stesso PDF e inserisci i codici manualmente</button>}
    {source&&<div className="import-result" role="status"><FileText size={19}/><div><strong>{source.name}</strong><small>{source.pages} pagine lette{source.ocrPages?` · OCR su ${source.ocrPages} pagine`:''} · PDF allegato al salvataggio</small></div></div>}
   </section>}
   {(item.id||source)&&<form onSubmit={save}>
    {source&&!item.id&&<>
-    {!candidates.length&&<p className="alert">Nessun numero contenitore riconosciuto. Puoi inserire tutti i numeri dal documento oppure caricare una scansione più leggibile.</p>}
+    {!candidates.length&&<p className="alert">{source.manual?"PDF caricato. Inserisci tutti i contenitori presenti nel documento e verifica i codici prima di salvare.":"Nessun numero contenitore riconosciuto. Puoi inserire tutti i numeri dal documento oppure caricare una scansione più leggibile."}</p>}
    </>}
    <div className="form-grid"><label>Contenitori in bolla ({containers.length})<textarea required rows={Math.min(6,Math.max(2,containers.length))} value={containerText} placeholder={'HLBU8225693\nCAIU4229738'} onChange={e=>{setContainerText(e.target.value.toUpperCase());setVerified(false);change('deposited',false);}}/><small className="hint">Un codice per riga. Aggiungi o correggi tutti i contenitori della bolla.</small></label>
     <label>Cliente<select required value={item.client_id} onChange={e=>{setItem(s=>({...s,client_id:e.target.value,deposited:false}));setMessage('');}}><option value="">Seleziona cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label></div>
