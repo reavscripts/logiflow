@@ -83,3 +83,9 @@ Questa cartella è la radice del progetto da pubblicare su GitHub e collegare a 
 Configurazione, risveglio anticipato e pubblicazione descritti in [DEPLOY.md](DEPLOY.md). Dopo aver creato un repository GitHub privato vuoto, collegarlo a questa cartella, creare il primo commit e pubblicare il ramo `main`. L'URL reale di Render va inserito con `npm run configure:hosting -- https://NOME-REALE.onrender.com` prima della build Vercel.
 
 La variante gratuita online usa Render Free senza disco, Turso Free per il database e Supabase Storage Free per i PDF. Leggere DEPLOY.md per quote, credenziali e restrizione non commerciale di Vercel Hobby.
+
+### Operazioni comunitarie
+
+Durante l’importazione del PDF, LogiFlow cerca T2L/T2LF e indicazioni esplicite come «merce CEE» anche nel testo ottenuto dalle scansioni. Se rilevate, propone la spunta **COMUNITARIO**, correggibile prima del salvataggio e nelle operazioni esistenti. Il caricamento con riconoscimento saltato richiede la scelta manuale. Non si deduce lo stato dai soli paesi o clienti; i documenti già archiviati non vengono riclassificati automaticamente.
+
+Tutti i contenitori delle operazioni comunitarie sono esclusi dalla selezione, dal conteggio e dai nuovi PDF fuori orario. Il server verifica lo stato anche alla generazione, mentre le liste storiche restano invariate.

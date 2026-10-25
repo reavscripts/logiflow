@@ -43,7 +43,7 @@ export default function FuoriOrario({ api }) {
         <label>Cerca contenitore o cliente<input value={query} onChange={e => setQuery(e.target.value)} placeholder="Es. MSCU1234567 oppure VITALE"/></label>
         <div className="fo-actions"><strong>{selected.length} selezionati su {rows.length}</strong><button type="button" className="text-button" onClick={() => setSelected(old => [...new Set([...old, ...visible.map(r => r.code)])])}>Seleziona i risultati ({visible.length})</button><button type="button" className="text-button" onClick={() => setSelected([])}>Svuota selezione</button></div>
         <div className="fo-containers">{visible.map(r => <label key={r.code} className={selected.includes(r.code) ? 'chosen' : ''}><input type="checkbox" checked={selected.includes(r.code)} onChange={() => toggle(r.code)}/><span><strong>{r.code}</strong><small>{r.client}</small></span></label>)}{!visible.length && <p className="muted">{!loaded ? 'Caricamento contenitori…' : rows.length ? 'Nessun risultato per questa ricerca.' : 'Nessun contenitore ancora da uscire disponibile.'}</p>}</div>
-        <p className="hint">Sono selezionabili solo i contenitori non ancora usciti. La lista si aggiorna automaticamente. Massimo 200 contenitori per lista.</p>
+        <p className="hint">Sono selezionabili solo i contenitori non ancora usciti di operazioni non comunitarie. I comunitari sono esclusi anche dal conteggio. La lista si aggiorna automaticamente. Massimo 200 contenitori per lista.</p>
         <button className="primary" disabled={!selected.length || selected.length > 200 || !today || end <= start || start < '18:00'}>{busy ? 'Generazione in corso…' : `Genera A77 + elenco (${selected.length})`}</button>
       </fieldset>
     </form>

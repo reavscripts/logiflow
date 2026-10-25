@@ -96,6 +96,21 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   r=await call(`/dossiers/${multiId}`,'PUT',{...multi,containers:[multi.containers[0]]});assert.equal(r.status,200);
   r=await call(`/fuori-orario/${list.id}/pdf`);assert.deepEqual(new Uint8Array(await r.arrayBuffer()),savedPdf);
   r=await call('/fuori-orario/999999/pdf');assert.equal(r.status,404);
+  // Community classification removes every container from live lists, preserving archives.
+  r=await call(`/dossiers/${multiId}`,'PUT',{...multi,community:true});assert.equal(r.status,200);
+  r=await call('/fuori-orario');const communityState=await r.json();assert.ok(multi.containers.every(code=>!communityState.candidates.some(c=>c.code===code)));assert.equal(communityState.lists.length,1);
+  r=await call('/fuori-orario','POST',{containers:[multi.containers[0],'MSCU1234567'],start:'18:00',end:'21:00'});assert.equal(r.status,409);
+  r=await call(`/fuori-orario/${list.id}/pdf`);assert.deepEqual(new Uint8Array(await r.arrayBuffer()),savedPdf);
+  r=await call(`/dossiers/${multiId}`,'PUT',multi);assert.equal(r.status,200);
+  r=await call('/dossiers');assert.equal((await r.json()).find(d=>d.id===multiId).community,1);
+  r=await call(`/dossiers/${multiId}`,'PUT',{...multi,community:false});assert.equal(r.status,200);
+  r=await call('/fuori-orario');assert.ok((await r.json()).candidates.some(c=>c.code===multi.containers[0]));
+  const communityPdf=await PDFDocument.create();communityPdf.addPage().drawText('T2L Container TEST1234567',{x:40,y:500,size:20});
+  const communityInput=new FormData();communityInput.append('file',new Blob([await communityPdf.save()]),'t2l.pdf');
+  r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:communityInput});assert.equal(r.status,200);const detected=await r.json();assert.equal(detected.community,true);
+  r=await call('/dossiers','POST',{container:'TEST1234567',client_id:clients[0].id,importToken:detected.importToken});assert.equal(r.status,201);const communityId=(await r.json()).id;
+  r=await call('/dossiers');assert.equal((await r.json()).find(d=>d.id===communityId).community,1);
+  r=await call('/fuori-orario');assert.ok(!(await r.json()).candidates.some(c=>c.code==='TEST1234567'));
   await call('/logout','POST');r=await call('/dossiers');assert.equal(r.status,401);
  } finally {child.kill();await new Promise(resolve=>child.once('exit',resolve));await rm(dir,{recursive:true,force:true});}
 });

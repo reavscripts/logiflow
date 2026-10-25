@@ -48,6 +48,7 @@ if (!(await db.prepare('PRAGMA table_info(clients)').all()).some(column => colum
 await db.exec('CREATE TABLE IF NOT EXISTS operation_containers(code TEXT PRIMARY KEY, dossier_id INTEGER NOT NULL REFERENCES dossiers(id))');
 await db.exec('INSERT OR IGNORE INTO operation_containers(code,dossier_id) SELECT container,id FROM dossiers');
 if (!(await db.prepare('PRAGMA table_info(documents)').all()).some(c => c.name === 'a88_signature')) await db.exec("ALTER TABLE documents ADD COLUMN a88_signature TEXT NOT NULL DEFAULT ''");
+if (!(await db.prepare('PRAGMA table_info(dossiers)').all()).some(c => c.name === 'community')) await db.exec('ALTER TABLE dossiers ADD COLUMN community INTEGER NOT NULL DEFAULT 0');
 async function codesFor(id) {
   return (await db.prepare('SELECT code FROM operation_containers WHERE dossier_id=? ORDER BY rowid').all(id)).map(r => r.code);
 }
@@ -206,7 +207,7 @@ app.get('/api/departures', async (req, res) => res.json(await db.prepare('SELECT
 await db.exec(`CREATE TABLE IF NOT EXISTS fuori_orario(id INTEGER PRIMARY KEY, date TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, containers TEXT NOT NULL, created TEXT NOT NULL, pdf BLOB NOT NULL)`);
 app.get('/api/fuori-orario', async (req, res) => res.json({
   today: romeDate(),
-  candidates: await db.prepare('SELECT oc.code,c.name AS client FROM operation_containers oc JOIN dossiers d ON d.id=oc.dossier_id JOIN clients c ON c.id=d.client_id WHERE NOT EXISTS (SELECT 1 FROM departures e WHERE e.container=oc.code) ORDER BY d.updated DESC,oc.rowid').all(),
+  candidates: await db.prepare('SELECT oc.code,c.name AS client FROM operation_containers oc JOIN dossiers d ON d.id=oc.dossier_id JOIN clients c ON c.id=d.client_id WHERE d.community=0 AND NOT EXISTS (SELECT 1 FROM departures e WHERE e.container=oc.code) ORDER BY d.updated DESC,oc.rowid').all(),
   lists: (await db.prepare('SELECT id,date,start,end,containers,created FROM fuori_orario ORDER BY id DESC').all()).map(r => ({
     ...r,
     containers: JSON.parse(r.containers)
@@ -222,7 +223,9 @@ app.post('/api/fuori-orario', async (req, res) => {
     validateWindow(start, end);
     const placeholders = codes.map(() => '?').join(',');
     const alreadyExited = async () => !!(await db.prepare(`SELECT 1 FROM departures WHERE container IN (${placeholders}) LIMIT 1`).get(...codes));
+    const hasCommunity = async () => !!(await db.prepare(`SELECT 1 FROM operation_containers oc JOIN dossiers d ON d.id=oc.dossier_id WHERE d.community=1 AND oc.code IN (${placeholders}) LIMIT 1`).get(...codes));
     const allExist = async () => (await db.prepare(`SELECT count(*) AS n FROM operation_containers WHERE code IN (${placeholders})`).get(...codes)).n === codes.length;
+    if (await hasCommunity()) return res.status(409).json({error: 'Un contenitore appartiene a un’operazione comunitaria e non richiede fuori orario. Aggiorna la selezione.'});
     if (await alreadyExited()) return res.status(409).json({
       error: 'Un contenitore selezionato è già uscito dal porto. Aggiorna la selezione.'
     });
@@ -235,10 +238,10 @@ app.post('/api/fuori-orario', async (req, res) => {
       error: 'È cambiato il giorno durante la generazione. Riprova con la data corrente.'
     });
     await db.exec('BEGIN');
-    if (!(await allExist()) || (await alreadyExited())) {
+    if (!(await allExist()) || (await alreadyExited()) || (await hasCommunity())) {
       await db.exec('ROLLBACK');
       return res.status(409).json({
-        error: 'Le operazioni sono cambiate o un contenitore è uscito. Aggiorna la selezione.'
+        error: 'Le operazioni sono cambiate, un contenitore è comunitario oppure è uscito. Aggiorna la selezione.'
       });
     }
     const result = await db.prepare('INSERT INTO fuori_orario(date,start,end,containers,created,pdf) VALUES (?,?,?,?,?,?)').run(date, start, end, JSON.stringify(codes), new Date().toISOString(), pdf);
@@ -319,24 +322,26 @@ async function fields(body, existing) {
   const box = existing?.deposited && existing.client_id === client && deposited ? existing.box : customer.box;
   const pos = [box, ...['binder', 'divider'].map(k => String(body[k] || '').trim().slice(0, 80))];
   if (deposited && pos.some(p => !p)) throw Error('Per confermare il deposito serve la posizione completa.');
-  return [container, client, released, deposited, ...pos, String(body.notes || '').slice(0, 2000), new Date().toISOString()];
+  if (body.community !== undefined && ![true, false, 0, 1].includes(body.community)) throw Error('Valore COMUNITARIO non valido.');
+  const community = body.community === undefined ? (existing?.community || 0) : Number(!!body.community);
+  return [container, client, released, deposited, community, ...pos, String(body.notes || '').slice(0, 2000), new Date().toISOString()];
 }
 app.post('/api/dossiers', async (req, res) => {
   let stored;
   try {
     const codes = validCodes(req.body);
     await checkA88(req.body, codes);
-    const values = await fields(req.body);
     const source = req.body.importToken ? imports.get(req.body.importToken) : null;
     if (req.body.importToken && (!source || source.owner !== req.token || source.until < Date.now())) return res.status(400).json({
       error: 'PDF temporaneo scaduto. Caricalo nuovamente.'
     });
+    const values = await fields({...req.body, community: req.body.community ?? source?.community ?? false});
     if (source) {
       stored = randomBytes(24).toString('hex') + '.pdf';
       await storage.put(stored, source.buffer);
     }
     await db.exec('BEGIN');
-    const result = await db.prepare('INSERT INTO dossiers(container,client_id,released,deposited,box,binder,divider,notes,updated) VALUES (?,?,?,?,?,?,?,?,?)').run(...values);
+    const result = await db.prepare('INSERT INTO dossiers(container,client_id,released,deposited,community,box,binder,divider,notes,updated) VALUES (?,?,?,?,?,?,?,?,?,?)').run(...values);
     const id = Number(result.lastInsertRowid);
     await replaceCodes(id, codes);
     if (source) {
@@ -369,7 +374,7 @@ app.put('/api/dossiers/:id', async (req, res) => {
     if ((await db.prepare('SELECT 1 FROM retained_bills WHERE dossier_id=?').get(id)) && (req.body.deposited === true || req.body.deposited === 1)) throw Error('La bolla è trattenuta dalla Guardia di Finanza e non può risultare in cassetta.');
     await checkA88(req.body, codes, id);
     const values = await fields(req.body, existing);
-    await db.prepare('UPDATE dossiers SET container=?,client_id=?,released=?,deposited=?,box=?,binder=?,divider=?,notes=?,updated=? WHERE id=?').run(...values, id);
+    await db.prepare('UPDATE dossiers SET container=?,client_id=?,released=?,deposited=?,community=?,box=?,binder=?,divider=?,notes=?,updated=? WHERE id=?').run(...values, id);
     await replaceCodes(id, codes);
     await db.exec('COMMIT');
     res.json({
@@ -491,6 +496,7 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
     });
     const token = randomBytes(24).toString('hex');
     imports.set(token, {
+      community: !!result.community,
       owner: req.token,
       buffer: req.file.buffer,
       name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200),

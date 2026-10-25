@@ -29,7 +29,7 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
   try {
    const form=new FormData();form.append('file',file);
    const result=await api('/analyze-pdf'+(skipRecognition?'?manual=1':''),{method:'POST',body:form});
-   setSource({...result,name:file.name});setCandidates(result.candidates);
+   change('community',!!result.community);setSource({...result,name:file.name});setCandidates(result.candidates);
    setContainerText(result.candidates.join('\n'));if(result.candidates.length)change('container',result.candidates[0]);
   }catch(e){setError(e.message);}finally{setAnalyzing(false);}
  }
@@ -63,6 +63,7 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
    <div className="form-grid"><label>Contenitori in bolla ({containers.length})<textarea required rows={Math.min(6,Math.max(2,containers.length))} value={containerText} placeholder={'HLBU8225693\nCAIU4229738'} onChange={e=>{setContainerText(e.target.value.toUpperCase());setVerified(false);change('deposited',false);}}/><small className="hint">Un codice per riga. Aggiungi o correggi tutti i contenitori della bolla.</small></label>
     <label>Cliente<select required value={item.client_id} onChange={e=>{setItem(s=>({...s,client_id:e.target.value,deposited:false}));setMessage('');}}><option value="">Seleziona cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label></div>
    {!item.id&&<label className="check-label verify-code"><input type="checkbox" required checked={verified} onChange={e=>setVerified(e.target.checked)}/>Ho verificato tutti i contenitori sul PDF</label>}
+   <div className="check-panel"><label className="check-label"><input type="checkbox" checked={!!item.community} disabled={busy||analyzing} onChange={e=>change('community',e.target.checked)}/>COMUNITARIO</label><p className="hint">I contenitori di questa operazione sono esclusi dal conteggio e dai documenti del fuori orario.</p>{source?.communityEvidence&&<p className="hint">Riconosciuto nel PDF: {source.communityEvidence}. Puoi correggere la spunta prima di salvare.</p>}</div>
    <div className="check-panel"><label className="check-label"><input type="checkbox" checked={!!item.deposited} disabled={multi&&!a88Available} onChange={e=>change('deposited',e.target.checked)}/>Operazione depositata in cassetta</label></div>
    <div className="form-grid thirds">{[['box','Cassetta cliente','Configura in Clienti'],['binder','Fascicolo cartaceo','Es. 03'],['divider','Separatore','Es. 12']].map(([key,label,placeholder])=><label key={key}>{label}<input value={key==='box'?currentBox:item[key]} readOnly={key==='box'} required={!!item.deposited} maxLength={key==='box'?243:80} placeholder={placeholder} onChange={e=>change(key,e.target.value)}/></label>)}</div>
    <label>Note interne<textarea value={item.notes} maxLength={2000} rows={2} placeholder="Indicazioni per gli operatori" onChange={e=>change('notes',e.target.value)}/></label>
