@@ -3,7 +3,7 @@ dist/
 data/
 .env
 *.log
-
+LOGIFLOW.txt
 .env.*
 !.env.example
 release/
