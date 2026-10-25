@@ -9,6 +9,7 @@ import { PDFDocument } from 'pdf-lib';
 import multer from 'multer';
 import { openDatabase } from './database.js';
 import { documentStorage } from './storage.js';
+import {pdfHash, installDocumentHashes, rejectDuplicatePdf, duplicateHashError, duplicateHashMessage} from './document-hashes.js';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -49,6 +50,7 @@ await db.exec('CREATE TABLE IF NOT EXISTS operation_containers(code TEXT PRIMARY
 await db.exec('INSERT OR IGNORE INTO operation_containers(code,dossier_id) SELECT container,id FROM dossiers');
 if (!(await db.prepare('PRAGMA table_info(documents)').all()).some(c => c.name === 'a88_signature')) await db.exec("ALTER TABLE documents ADD COLUMN a88_signature TEXT NOT NULL DEFAULT ''");
 if (!(await db.prepare('PRAGMA table_info(dossiers)').all()).some(c => c.name === 'community')) await db.exec('ALTER TABLE dossiers ADD COLUMN community INTEGER NOT NULL DEFAULT 0');
+await installDocumentHashes(db, storage);
 async function codesFor(id) {
   return (await db.prepare('SELECT code FROM operation_containers WHERE dossier_id=? ORDER BY rowid').all(id)).map(r => r.code);
 }
@@ -341,6 +343,7 @@ app.post('/api/dossiers', async (req, res) => {
     const values = await fields({...req.body, community: req.body.community ?? source?.community ?? false});
     await checkA88(req.body, codes, undefined, values[4]);
     if (source) {
+      await rejectDuplicatePdf(db, source.sha256);
       stored = randomBytes(24).toString('hex') + '.pdf';
       await storage.put(stored, source.buffer);
     }
@@ -349,7 +352,8 @@ app.post('/api/dossiers', async (req, res) => {
     const id = Number(result.lastInsertRowid);
     await replaceCodes(id, codes);
     if (source) {
-      await db.prepare('INSERT INTO documents(dossier_id,name,stored,category,size) VALUES (?,?,?,?,?)').run(id, source.name, stored, 'Altro', source.buffer.length);
+      await rejectDuplicatePdf(db, source.sha256);
+      await db.prepare('INSERT INTO documents(dossier_id,name,stored,category,size,sha256) VALUES (?,?,?,?,?,?)').run(id, source.name, stored, 'Altro', source.buffer.length, source.sha256);
     }
     await db.exec('COMMIT');
     if (source) imports.delete(req.body.importToken);
@@ -359,6 +363,7 @@ app.post('/api/dossiers', async (req, res) => {
   } catch (e) {
     if (db.isTransaction) await db.exec('ROLLBACK');
     if (stored) await cleanupStored(stored);
+    if (duplicateHashError(e)) return res.status(409).json({error: duplicateHashMessage(e)});
     res.status(400).json({
       error: e.message.includes('UNIQUE') ? 'Esiste già un’operazione per questo contenitore. Aprila per aggiungere documenti.' : e.message
     });
@@ -393,12 +398,15 @@ app.put('/api/dossiers/:id', async (req, res) => {
 });
 app.get('/api/dossiers/:id/documents', async (req, res) => res.json(await db.prepare('SELECT id,name,category,size,a88_signature FROM documents WHERE dossier_id=?').all(Number(req.params.id))));
 async function attachA88(id, buffer, name, codes) {
+  const hash = pdfHash(buffer);
+  await rejectDuplicatePdf(db, hash);
   const stored = randomBytes(24).toString('hex') + '.pdf';
   try {
     await storage.put(stored, buffer);
     await db.exec('BEGIN');
+    await rejectDuplicatePdf(db, hash);
     if (signature(await codesFor(id)) !== signature(codes)) throw Error('Elenco contenitori modificato. Riprova.');
-    await db.prepare('INSERT INTO documents(dossier_id,name,stored,category,size,a88_signature) VALUES (?,?,?,?,?,?)').run(id, name, stored, 'A88', buffer.length, signature(codes));
+    await db.prepare('INSERT INTO documents(dossier_id,name,stored,category,size,a88_signature,sha256) VALUES (?,?,?,?,?,?,?)').run(id, name, stored, 'A88', buffer.length, signature(codes), hash);
     await db.prepare('UPDATE dossiers SET updated=? WHERE id=?').run(new Date().toISOString(), id);
     await db.exec('COMMIT');
   } catch (e) {
@@ -427,6 +435,7 @@ app.post('/api/dossiers/:id/a88/generate', async (req, res) => {
       ok: true
     });
   } catch (e) {
+    if (duplicateHashError(e)) return res.status(409).json({error: duplicateHashMessage(e)});
     res.status(400).json({
       error: e.message
     });
@@ -454,6 +463,7 @@ app.post('/api/dossiers/:id/a88', upload.single('file'), async (req, res) => {
   });
   analyzing = true;
   try {
+    await rejectDuplicatePdf(db, pdfHash(req.file.buffer));
     const read = await recognizePdf(req.file.buffer);
     if (codes.some(code => !read.candidates.includes(code))) return res.status(400).json({
       error: 'Non sono stati riconosciuti tutti i contenitori nell’A88. Verifica il documento oppure genera un nuovo modulo.'
@@ -466,6 +476,7 @@ app.post('/api/dossiers/:id/a88', upload.single('file'), async (req, res) => {
       ok: true
     });
   } catch (e) {
+    if (duplicateHashError(e)) return res.status(409).json({error: duplicateHashMessage(e)});
     res.status(400).json({
       error: e.message
     });
@@ -518,6 +529,8 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
   const manual = req.query.manual === '1';
   if (!manual) analyzing = true;
   try {
+    const hash = pdfHash(req.file.buffer);
+    await rejectDuplicatePdf(db, hash);
     let result;
     if (manual) {
       const pdf = await PDFDocument.load(req.file.buffer);
@@ -531,6 +544,7 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
     });
     const token = randomBytes(24).toString('hex');
     imports.set(token, {
+      sha256: hash,
       community: !!result.community,
       owner: req.token,
       buffer: req.file.buffer,
@@ -543,6 +557,7 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
       importToken: token
     });
   } catch (e) {
+    if (duplicateHashError(e)) return res.status(409).json({error: duplicateHashMessage(e)});
     res.status(400).json({
       error: e.message
     });
@@ -565,16 +580,20 @@ app.post('/api/dossiers/:id/documents', upload.array('files', 15), async (req, r
     error: 'Seleziona soltanto file PDF validi.'
   });
   const written = [];
+  const hashes = req.files.map(f => pdfHash(f.buffer));
   try {
+    if (new Set(hashes).size !== hashes.length) return res.status(409).json({error: 'Hai selezionato più copie dello stesso PDF. Mantieni una sola copia del file.'});
+    for (const hash of hashes) await rejectDuplicatePdf(db, hash);
     for (const f of req.files) {
       const stored = randomBytes(24).toString('hex') + '.pdf';
       await storage.put(stored, f.buffer);
       written.push(stored);
     }
     await db.exec('BEGIN');
+    for (const hash of hashes) await rejectDuplicatePdf(db, hash);
     await db.batch(req.files.map((f, i) => ({
-      sql: 'INSERT INTO documents(dossier_id,name,stored,category,size) VALUES (?,?,?,?,?)',
-      args: [id, Buffer.from(f.originalname, 'latin1').toString('utf8').slice(0, 200), written[i], String(req.body.category || 'Altro').slice(0, 80), f.size]
+      sql: 'INSERT INTO documents(dossier_id,name,stored,category,size,sha256) VALUES (?,?,?,?,?,?)',
+      args: [id, Buffer.from(f.originalname, 'latin1').toString('utf8').slice(0, 200), written[i], String(req.body.category || 'Altro').slice(0, 80), f.size, hashes[i]]
     })));
     await db.prepare('UPDATE dossiers SET updated=? WHERE id=?').run(new Date().toISOString(), id);
     await db.exec('COMMIT');
@@ -584,6 +603,7 @@ app.post('/api/dossiers/:id/documents', upload.array('files', 15), async (req, r
   } catch (e) {
     if (db.isTransaction) await db.exec('ROLLBACK');
     for (const name of written) await cleanupStored(name);
+    if (duplicateHashError(e)) return res.status(409).json({error: duplicateHashMessage(e)});
     throw e;
   }
 });

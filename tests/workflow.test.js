@@ -31,6 +31,11 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   const form=new FormData();form.append('category','Bolletta doganale');form.append('files',new Blob(['%PDF-1.4\nTest document\n%%EOF'],{type:'application/pdf'}),'bolletta.pdf');
   r=await fetch(`${base}/dossiers/${id}/documents`,{method:'POST',headers:{Cookie:cookie},body:form});assert.equal(r.status,201);
   r=await call(`/dossiers/${id}/documents`);const docs=await r.json();assert.equal(docs.length,1);
+  r=await fetch(`${base}/dossiers/${id}/documents`,{method:'POST',headers:{Cookie:cookie},body:form});assert.equal(r.status,409);
+  const repeated=new FormData();for(const name of ['copy1.pdf','copy2.pdf'])repeated.append('files',new Blob(['%PDF-1.4 new identical batch']),name);
+  r=await fetch(`${base}/dossiers/${id}/documents`,{method:'POST',headers:{Cookie:cookie},body:repeated});assert.equal(r.status,409);
+  r=await call(`/dossiers/${id}/documents`);assert.equal((await r.json()).length,1);
+
   r=await fetch(`${base}/documents/${docs[0].id}`);assert.equal(r.status,401);
   r=await call(`/documents/${docs[0].id}`);assert.equal(r.status,200);assert.match(await r.text(),/^%PDF-/);
   item.released=true;item.deposited=true;item.divider='';r=await call(`/dossiers/${id}`,'PUT',item);assert.equal(r.status,400);
@@ -58,13 +63,18 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   r=await call(`/dossiers/${imported.id}/documents`);const importedDocs=await r.json();assert.equal(importedDocs.length,1);assert.equal(importedDocs[0].name,'operazione.pdf');
   r=await call(`/documents/${importedDocs[0].id}`);assert.deepEqual(new Uint8Array(await r.arrayBuffer()),bytes);
   r=await call('/dossiers','POST',{...item,container:'CHSU8170741',importToken:recognition.importToken});assert.equal(r.status,400);
+  // Stored content is rejected even with a new name and when OCR is skipped.
+  const renamed=new FormData();renamed.append('file',new Blob([bytes]),'renamed.pdf');
+  for(const suffix of ['', '?manual=1']){r=await fetch(base+'/analyze-pdf'+suffix,{method:'POST',headers:{Cookie:cookie},body:renamed});assert.equal(r.status,409);assert.match((await r.json()).error,/CHSU8170740/);}
+  pdf.setTitle('Manual upload');const manualBytes=await pdf.save();input.set('file',new Blob([manualBytes]),'manual.pdf');
   r=await fetch(base+'/analyze-pdf?manual=1',{method:'POST',body:input});assert.equal(r.status,401);
   r=await fetch(base+'/analyze-pdf?manual=1',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);
   const manual=await r.json();assert.equal(manual.manual,true);assert.equal(manual.pages,1);assert.deepEqual(manual.candidates,[]);assert.ok(manual.importToken);
   r=await call('/dossiers','POST',{...item,deposited:false,container:'SELU4739983',containers:['SELU4739983'],importToken:manual.importToken});assert.equal(r.status,201);
   const manualId=(await r.json()).id;
   r=await call(`/dossiers/${manualId}/documents`);const manualDocs=await r.json();assert.equal(manualDocs.length,1);
-  r=await call(`/documents/${manualDocs[0].id}`);assert.deepEqual(new Uint8Array(await r.arrayBuffer()),bytes);
+  r=await call(`/documents/${manualDocs[0].id}`);assert.deepEqual(new Uint8Array(await r.arrayBuffer()),manualBytes);
+  pdf.setTitle('Unsaved analysis');input.set('file',new Blob([await pdf.save()]),'analysis.pdf');
   const invalidPdf=new FormData();invalidPdf.append('file',new Blob(['%PDF-invalid']),'invalid.pdf');
   r=await fetch(base+'/analyze-pdf?manual=1',{method:'POST',headers:{Cookie:cookie},body:invalidPdf});assert.equal(r.status,400);
   const multi={...item,container:'HLBU8225693',containers:['HLBU8225693','CAIU4229738'],deposited:false};
@@ -82,7 +92,7 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   r=await call('/dossiers');rows=await r.json();assert.equal(rows.find(d=>d.id===multiId).a88_available,false);
   r=await call(`/dossiers/${multiId}`,'PUT',{...multi,containers:['HLBU8225693','HLBU8225693']});assert.equal(r.status,400);
   r=await call(`/dossiers/${multiId}`,'PUT',multi);assert.equal(r.status,200);
-  const wrong=new FormData();wrong.append('file',new Blob([bytes]),'wrong-a88.pdf');r=await fetch(`${base}/dossiers/${multiId}/a88`,{method:'POST',headers:{Cookie:cookie},body:wrong});assert.equal(r.status,400);
+  const wrong=new FormData();wrong.append('file',new Blob([bytes]),'wrong-a88.pdf');r=await fetch(`${base}/dossiers/${multiId}/a88`,{method:'POST',headers:{Cookie:cookie},body:wrong});assert.equal(r.status,409);
   const matching=await PDFDocument.create();matching.addPage().drawText('A88 HLBU8225693 CAIU4229738',{x:40,y:500,size:20});const right=new FormData();right.append('file',new Blob([await matching.save()]),'A88.pdf');r=await fetch(`${base}/dossiers/${multiId}/a88`,{method:'POST',headers:{Cookie:cookie},body:right});assert.equal(r.status,201);
   r=await fetch(base+'/fuori-orario');assert.equal(r.status,401);
   r=await call('/fuori-orario','POST',{containers:[],start:'18:00',end:'21:00'});assert.equal(r.status,400);
@@ -144,6 +154,13 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   disconnected.abort();assert.equal((await abandoned).name,'AbortError');
   await waitFor(async()=>{const r=await call('/analyze-pdf/cancel-disconnected-scan/progress');return r.ok&&(await r.json()).phase==='cancelled';});
   r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);
+  // A file saved after analysis must be rejected when the pending operation is saved.
+  r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);const pendingHash=await r.json();
+  const staleFile=input.get('file');const attachment=new FormData();attachment.append('files',staleFile,'already-saved.pdf');
+  const races=await Promise.all([fetch(`${base}/dossiers/${id}/documents`,{method:'POST',headers:{Cookie:cookie},body:attachment}),fetch(`${base}/dossiers/${imported.id}/documents`,{method:'POST',headers:{Cookie:cookie},body:attachment})]);
+  assert.deepEqual(races.map(r=>r.status).sort(),[201,409]);
+  r=await call('/dossiers','POST',{...item,container:'HASH1234567',deposited:false,importToken:pendingHash.importToken});assert.equal(r.status,409);
+  r=await call('/dossiers');assert.ok(!(await r.json()).some(d=>d.container==='HASH1234567'));
   r=await call('/logout','POST');assert.equal(r.status,200);assert.match(r.headers.get('set-cookie'),/session=;.*Max-Age=0/);
   r=await call('/session');assert.equal(r.status,401);
   r=await call('/dossiers');assert.equal(r.status,401);
