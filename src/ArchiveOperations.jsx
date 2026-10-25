@@ -1,0 +1,26 @@
+import React,{useEffect,useState} from 'react';
+import {Archive,Download,Trash2,LoaderCircle,CheckCircle2} from 'lucide-react';
+import './archive.css';
+
+export default function ArchiveOperations({api,onPurged}){
+ const [job,setJob]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[verified,setVerified]=useState(false),[confirmation,setConfirmation]=useState('');
+ useEffect(()=>{
+  if(!job?.id)return;
+  let active=true,timer;
+  const update=async()=>{try{const next=await api(`/archives/${job.id}`);if(active)setJob(next);}catch(e){if(active)setError(e.message);}if(active)timer=setTimeout(update,1500);};
+  timer=setTimeout(update,1000);return()=>{active=false;clearTimeout(timer);};
+ },[job?.id]);
+ const prepare=async()=>{setBusy(true);setError('');setVerified(false);setConfirmation('');try{setJob(await api('/archives',{method:'POST'}));}catch(e){setError(e.message);}finally{setBusy(false);}};
+ const purge=async()=>{setBusy(true);setError('');try{const result=await api(`/archives/${job.id}/purge`,{method:'POST',body:JSON.stringify({confirmation,sha256:job.sha256})});setJob(j=>({...j,state:'purged',pendingFiles:result.pendingFiles}));onPurged();}catch(e){setError(e.message);}finally{setBusy(false);}};
+ return <section className="archive-page">
+  <div className="section-title"><div><div className="eyebrow">AREA OPERATORE</div><h1>Esporta e libera spazio</h1><p className="muted">Conserva un archivio completo prima di rimuovere le operazioni dal gestionale.</p></div><Archive size={30}/></div>
+  <div className="archive-card"><h2>1. Prepara l’archivio ZIP</h2><p>Include tutte le operazioni, anche quelle non ancora uscite, i numeri di contenitore, i PDF originali e allegati, gli A88, le uscite e le liste fuori orario.</p><p className="hint">Nello ZIP trovi APRI-ARCHIVIO.html per consultare le operazioni e aprire i documenti, e dati.json con tutti i dati esportati. Clienti, cassette e accesso operatore restano nel gestionale dopo la pulizia.</p>
+   <button className="primary" disabled={busy||job?.state==='building'} onClick={prepare}>{busy||job?.state==='building'?<LoaderCircle size={18} className="spin"/>:<Archive size={18}/>} {job?'Crea un nuovo archivio':'Prepara archivio completo'}</button>
+   {job?.state==='building'&&<div className="archive-progress" role="status"><p>Preparazione: {job.processed} di {job.total} PDF verificati.</p><progress max={Math.max(job.total,1)} value={job.processed}/><small>Per archivi grandi possono servire alcuni minuti. I dati restano nel gestionale.</small></div>}
+  </div>
+  {job&&['ready','purged'].includes(job.state)&&<div className="archive-card"><h2>2. Scarica e controlla</h2><div className="archive-counts"><span><strong>{job.counts.operations}</strong> operazioni</span><span><strong>{job.counts.documents}</strong> allegati</span><span><strong>{job.counts.outsideLists}</strong> liste fuori orario</span></div><p>Archivio pronto · {(job.bytes/1024/1024).toFixed(1)} MB. Estrai lo ZIP e apri <strong>APRI-ARCHIVIO.html</strong> per controllare i documenti.</p><a className="primary archive-download" href={`/api/archives/${job.id}/zip`} download><Download size={18}/>Scarica archivio ZIP</a><p className="hint">Download temporaneo disponibile per un’ora dalla creazione e fino al riavvio del server. Conserva la tua copia prima di pulire.</p><details><summary>Impronta di verifica SHA-256</summary><code className="archive-hash">{job.sha256}</code></details></div>}
+  {job?.state==='ready'&&<div className="archive-card archive-delete"><h2>3. Pulisci le operazioni esportate</h2><p>Verranno eliminati dal gestionale <strong>tutte le operazioni esportate, i PDF allegati, le uscite e le liste fuori orario</strong>. Saranno consultabili nella copia ZIP che conservi.</p><label className="check-label"><input type="checkbox" checked={verified} disabled={!job.downloaded||busy} onChange={e=>setVerified(e.target.checked)}/>Ho scaricato, estratto e verificato l’archivio ZIP.</label>{!job.downloaded&&<p className="hint">Completa il download per abilitare la conferma.</p>}<label>Scrivi ELIMINA per confermare<input value={confirmation} disabled={!job.downloaded||busy} onChange={e=>setConfirmation(e.target.value)} autoComplete="off" placeholder="ELIMINA"/></label><button className="archive-danger" disabled={busy||!job.downloaded||!verified||confirmation!=='ELIMINA'} onClick={purge}><Trash2 size={17}/>{busy?'Pulizia…':'Elimina i dati esportati'}</button><p className="hint">Se nel frattempo vengono modificate o aggiunte operazioni, la pulizia si blocca e occorre creare un nuovo archivio.</p></div>}
+  {job?.state==='purged'&&<div className="archive-card" role="status"><h2><CheckCircle2 size={20}/> Operazioni rimosse dal database</h2>{job.pendingFiles>0?<><p>{job.pendingFiles} file ancora da rimuovere dall’archivio documenti.{job.cleaning?' Pulizia in corso…':' Puoi riprovare la rimozione dei file.'}</p>{!job.cleaning&&<button className="secondary" disabled={busy} onClick={purge}>Riprova pulizia file</button>}</>:<p>Pulizia completata. Clienti e configurazione delle cassette sono stati conservati.</p>}</div>}
+  {(error||job?.error)&&<p className="alert" role="alert">{error||job.error}</p>}
+ </section>;
+}

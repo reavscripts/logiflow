@@ -1,4 +1,5 @@
 import express from 'express';
+import {installArchive} from './archive.js';
 import { hostingConfig } from './hosting.js';
 const hosting = hostingConfig();
 import { installDepartures, departureState } from './departures.js';
@@ -211,6 +212,7 @@ app.get('/api/search', limit, async (req, res) => {
 app.use('/api', auth);
 app.get('/api/departures', async (req, res) => res.json(await db.prepare('SELECT e.*,c.name AS client,r.retained_at FROM departures e JOIN dossiers d ON d.id=e.dossier_id JOIN clients c ON c.id=d.client_id LEFT JOIN retained_bills r ON r.dossier_id=d.id ORDER BY e.exited_at DESC').all()));
 await db.exec(`CREATE TABLE IF NOT EXISTS fuori_orario(id INTEGER PRIMARY KEY, date TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL, containers TEXT NOT NULL, created TEXT NOT NULL, pdf BLOB NOT NULL)`);
+await installArchive(app, db, storage, {onPurged: () => {imports.clear();for (const entry of analysisProgress.values()) entry.controller?.abort();}});
 app.get('/api/fuori-orario', async (req, res) => res.json({
   today: romeDate(),
   candidates: await db.prepare('SELECT oc.code,c.name AS client FROM operation_containers oc JOIN dossiers d ON d.id=oc.dossier_id JOIN clients c ON c.id=d.client_id WHERE d.community=0 AND NOT EXISTS (SELECT 1 FROM departures e WHERE e.container=oc.code) ORDER BY d.updated DESC,oc.rowid').all(),
