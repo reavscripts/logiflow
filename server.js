@@ -176,9 +176,10 @@ app.post('/api/login', limit, async (req, res) => {
     ok: true
   });
 });
-app.post('/api/logout', auth, (req, res) => {
-  sessions.delete(req.token);
-  res.setHeader('Set-Cookie', 'session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+app.post('/api/logout', (req, res) => {
+  const token = req.headers.cookie?.split(';').map(s => s.trim()).find(s => s.startsWith('session='))?.slice(8);
+  sessions.delete(token);
+  res.setHeader('Set-Cookie', `session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${process.env.COOKIE_SECURE === 'true' ? '; Secure' : ''}`);
   res.json({
     ok: true
   });

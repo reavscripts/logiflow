@@ -29,6 +29,9 @@ test('API separata: health DB, cookie sicuro e richieste da Vercel',async()=>{
   response=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://logiflow.example','X-Forwarded-Proto':'https'},body});assert.equal(response.status,200);
   const cookie=response.headers.get('set-cookie');assert.match(cookie,/Secure/);assert.match(cookie,/HttpOnly/);assert.match(cookie,/SameSite=Strict/);
   response=await fetch(base+'/api/clients',{headers:{Cookie:cookie.split(';')[0],Origin:'https://logiflow.example'}});assert.equal(response.status,200);
+  response=await fetch(base+'/api/logout',{method:'POST',headers:{Cookie:cookie.split(';')[0],Origin:'https://evil.example'}});assert.equal(response.status,403);
+  response=await fetch(base+'/api/logout',{method:'POST',headers:{Cookie:cookie.split(';')[0],Origin:'https://logiflow.example'}});assert.equal(response.status,200);assert.match(response.headers.get('set-cookie'),/Max-Age=0; Secure/);
+  response=await fetch(base+'/api/session',{headers:{Cookie:cookie.split(';')[0]}});assert.equal(response.status,401);
   response=await fetch(base+'/');assert.equal((await response.json()).service,'Logiflow API');
  }finally{child.kill();await new Promise(resolve=>child.once('exit',resolve));await rm(dir,{recursive:true,force:true});}
 });

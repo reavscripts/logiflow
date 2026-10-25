@@ -144,6 +144,11 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   disconnected.abort();assert.equal((await abandoned).name,'AbortError');
   await waitFor(async()=>{const r=await call('/analyze-pdf/cancel-disconnected-scan/progress');return r.ok&&(await r.json()).phase==='cancelled';});
   r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);
-  await call('/logout','POST');r=await call('/dossiers');assert.equal(r.status,401);
+  r=await call('/logout','POST');assert.equal(r.status,200);assert.match(r.headers.get('set-cookie'),/session=;.*Max-Age=0/);
+  r=await call('/session');assert.equal(r.status,401);
+  r=await call('/dossiers');assert.equal(r.status,401);
+  r=await call('/logout','POST');assert.equal(r.status,200);
+  r=await fetch(base+'/logout',{method:'POST'});assert.equal(r.status,200);
+
  } finally {child.kill();await new Promise(resolve=>child.once('exit',resolve));await rm(dir,{recursive:true,force:true});}
 });
