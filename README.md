@@ -89,3 +89,5 @@ La variante gratuita online usa Render Free senza disco, Turso Free per il datab
 Durante l’importazione del PDF, LogiFlow cerca T2L/T2LF e indicazioni esplicite come «merce CEE» anche nel testo ottenuto dalle scansioni. Se rilevate, propone la spunta **COMUNITARIO**, correggibile prima del salvataggio e nelle operazioni esistenti. Il caricamento con riconoscimento saltato richiede la scelta manuale. Non si deduce lo stato dai soli paesi o clienti; i documenti già archiviati non vengono riclassificati automaticamente.
 
 Tutti i contenitori delle operazioni comunitarie sono esclusi dalla selezione, dal conteggio e dai nuovi PDF fuori orario. Il server verifica lo stato anche alla generazione, mentre le liste storiche restano invariate.
+
+Durante l’analisi PDF vengono mostrati secondi trascorsi, fase corrente, pagina e percentuale complessiva, aggiornata dalla lettura effettiva delle pagine e dal riconoscimento OCR. Prima di conoscere il numero di pagine la barra è indeterminata. Il 100% indica che il risultato è pronto.

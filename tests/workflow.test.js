@@ -107,7 +107,10 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   r=await call('/fuori-orario');assert.ok((await r.json()).candidates.some(c=>c.code===multi.containers[0]));
   const communityPdf=await PDFDocument.create();communityPdf.addPage().drawText('T2L Container TEST1234567',{x:40,y:500,size:20});
   const communityInput=new FormData();communityInput.append('file',new Blob([await communityPdf.save()]),'t2l.pdf');
-  r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:communityInput});assert.equal(r.status,200);const detected=await r.json();assert.equal(detected.community,true);
+  r=await fetch(base+'/analyze-pdf?progressId=test-community-progress',{method:'POST',headers:{Cookie:cookie},body:communityInput});assert.equal(r.status,200);const detected=await r.json();assert.equal(detected.community,true);
+  r=await call('/analyze-pdf/test-community-progress/progress');assert.equal(r.status,200);assert.deepEqual(await r.json(),{phase:'complete',page:1,pages:1,percent:100});
+  r=await fetch(base+'/analyze-pdf/test-community-progress/progress');assert.equal(r.status,401);
+  r=await call('/analyze-pdf/not-existing-progress/progress');assert.equal(r.status,404);
   r=await call('/dossiers','POST',{container:'TEST1234567',client_id:clients[0].id,importToken:detected.importToken});assert.equal(r.status,201);const communityId=(await r.json()).id;
   r=await call('/dossiers');assert.equal((await r.json()).find(d=>d.id===communityId).community,1);
   r=await call('/fuori-orario');assert.ok(!(await r.json()).candidates.some(c=>c.code==='TEST1234567'));

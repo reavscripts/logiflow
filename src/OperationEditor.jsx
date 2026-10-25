@@ -1,11 +1,17 @@
 import React, {useState} from 'react';
 import {Upload,FileText,Check,ArrowUpRight,LoaderCircle} from 'lucide-react';
 
+const scanPhases={uploading:'Caricamento PDF',opening:'Apertura PDF',reading:'Lettura del testo',preparing:'Preparazione della scansione',rendering:'Preparazione immagine della pagina',recognizing:'Riconoscimento del testo nella scansione',
+ 'page-complete':'Pagina elaborata',finalizing:'Verifica dei risultati',complete:'Analisi completata',error:'Analisi interrotta'};
+
 export default function OperationEditor({initial,clients,close,done,api,Modal}) {
  const [item,setItem]=useState({...initial}),[savedItem,setSavedItem]=useState({...initial});
  const [docs,setDocs]=useState([]),[files,setFiles]=useState([]),[category,setCategory]=useState('Bolletta doganale');
  const [busy,setBusy]=useState(false),[analyzing,setAnalyzing]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [containerText,setContainerText]=useState((initial.containers||[initial.container]).filter(Boolean).join('\n')),[reference,setReference]=useState('');
+ const [scanProgress,setScanProgress]=useState(null);
+ const progressRun=React.useRef(null);
+ React.useEffect(()=>()=>{if(progressRun.current){progressRun.current.active=false;clearTimeout(progressRun.current.timer);}},[]);
  const [manual,setManual]=useState(false),[selectedPdf,setSelectedPdf]=useState(null),[elapsed,setElapsed]=useState(0);
  React.useEffect(()=>{if(!analyzing)return;setElapsed(0);const start=Date.now();const timer=setInterval(()=>setElapsed(Math.floor((Date.now()-start)/1000)),1000);return ()=>clearInterval(timer);},[analyzing]);
  const containers=containerText.toUpperCase().split(/[\s,;]+/).filter(Boolean);
@@ -25,13 +31,20 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
   if(selected.length!==1){setError('Seleziona un solo PDF per creare l’operazione.');return;}
   const file=selected[0];
   if(!file.name.toLowerCase().endsWith('.pdf')||file.size>20*1024*1024){setError('Carica un PDF di massimo 20 MB.');return;}
-  setSelectedPdf(file);setAnalyzing(true);
+  setSelectedPdf(file);setAnalyzing(true);setScanProgress({phase:'uploading',page:0,pages:0,percent:0});
+  const run={active:true,timer:null};progressRun.current=run;
+  const progressId=crypto.randomUUID();
+  const poll=async()=>{
+   try{const progress=await api(`/analyze-pdf/${progressId}/progress`);if(run.active)setScanProgress(progress);}catch{/* The upload may still be in transit; its response reports any final error. */}
+   if(run.active)run.timer=setTimeout(poll,700);
+  };
+  run.timer=setTimeout(poll,500);
   try {
    const form=new FormData();form.append('file',file);
-   const result=await api('/analyze-pdf'+(skipRecognition?'?manual=1':''),{method:'POST',body:form});
+   const result=await api(`/analyze-pdf?progressId=${progressId}${skipRecognition?'&manual=1':''}`,{method:'POST',body:form});
    change('community',!!result.community);setSource({...result,name:file.name});setCandidates(result.candidates);
    setContainerText(result.candidates.join('\n'));if(result.candidates.length)change('container',result.candidates[0]);
-  }catch(e){setError(e.message);}finally{setAnalyzing(false);}
+  }catch(e){setError(e.message);}finally{run.active=false;clearTimeout(run.timer);if(progressRun.current===run)progressRun.current=null;setAnalyzing(false);}
  }
  async function save(e) {
   e.preventDefault();setError('');setMessage('');
@@ -51,7 +64,7 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
     <span>Riconoscimento automatico del contenitore · PDF fino a 20 MB e 20 pagine</span>
     <input aria-label="PDF da analizzare" type="file" accept=".pdf,application/pdf" disabled={analyzing||busy} onChange={e=>{analyze(Array.from(e.target.files));e.target.value='';}}/>
    </label>
-   {analyzing&&<div role="status"><p className="hint">{selectedPdf?.name} · Attesa: {elapsed}s</p><p className="hint">Le scansioni richiedono più tempo. L’analisi può durare fino a circa 2 minuti; al termine potrai verificare i codici.</p>{elapsed>=30&&<p className="hint">Il riconoscimento è ancora in corso. Se non riesce, potrai caricare il PDF senza riconoscimento e inserire i contenitori manualmente.</p>}</div>}
+   {analyzing&&<div role="status"><p className="hint">{selectedPdf?.name} · Attesa: {elapsed}s</p><p className="hint">{scanPhases[scanProgress?.phase]||'Caricamento PDF'}{scanProgress?.pages>0?` · Pagina ${scanProgress.page} di ${scanProgress.pages} · ${scanProgress.percent}%`:"…"}</p><progress className="scan-progress" aria-label="Avanzamento analisi PDF" max="100" value={scanProgress?.pages>0?scanProgress.percent:undefined}/><p className="hint">Le scansioni richiedono più tempo. L’analisi può durare fino a circa 2 minuti; al termine potrai verificare i codici.</p>{elapsed>=30&&<p className="hint">Il riconoscimento è ancora in corso. Se non riesce, potrai caricare il PDF senza riconoscimento e inserire i contenitori manualmente.</p>}</div>}
    {!analyzing&&<label className="check-label"><input type="checkbox" checked={manual} disabled={busy} onChange={e=>setManual(e.target.checked)}/>Inserisci i contenitori manualmente (salta il riconoscimento)</label>}
    {!analyzing&&!source&&selectedPdf&&error&&<button type="button" className="secondary full" disabled={busy} onClick={()=>{setManual(true);analyze([selectedPdf],true);}}>Continua con lo stesso PDF e inserisci i codici manualmente</button>}
    {source&&<div className="import-result" role="status"><FileText size={19}/><div><strong>{source.name}</strong><small>{source.pages} pagine lette{source.ocrPages?` · OCR su ${source.ocrPages} pagine`:''} · PDF allegato al salvataggio</small></div></div>}

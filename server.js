@@ -106,8 +106,10 @@ app.use((req, res, next) => {
 const sessions = new Map();
 const attempts = new Map();
 const imports = new Map();
+const analysisProgress = new Map();
 let analyzing = false;
 setInterval(() => {
+  for (const [key, value] of analysisProgress) if (value.until < Date.now() || !sessions.has(value.owner)) analysisProgress.delete(key);
   for (const [key, value] of imports) if (value.until < Date.now() || !sessions.has(value.owner)) imports.delete(key);
 }, 60000).unref();
 function limit(req, res, next) {
@@ -469,6 +471,11 @@ app.post('/api/dossiers/:id/a88', upload.single('file'), async (req, res) => {
     analyzing = false;
   }
 });
+app.get('/api/analyze-pdf/:id/progress', (req, res) => {
+  const entry = analysisProgress.get(req.params.id);
+  if (!entry || entry.owner !== req.token || entry.until < Date.now()) return res.status(404).json({error: 'Analisi non disponibile.'});
+  res.json(entry.progress);
+});
 app.post('/api/analyze-pdf', limit, (req, res, next) => {
   if (analyzing && req.query.manual !== '1') return res.status(429).json({
     error: 'È già in corso un’analisi PDF. Riprova tra poco.'
@@ -481,6 +488,15 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
   if (analyzing && req.query.manual !== '1') return res.status(429).json({
     error: 'È già in corso un’analisi PDF. Riprova tra poco.'
   });
+  const progressId = req.query.progressId;
+  if (progressId !== undefined && (typeof progressId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(progressId))) return res.status(400).json({error: 'Identificativo analisi non valido.'});
+  if (progressId && analysisProgress.has(progressId)) return res.status(409).json({error: 'Identificativo analisi già utilizzato.'});
+  const report = progress => {
+    if (progressId) analysisProgress.set(progressId, {owner: req.token, until: Date.now() + 5 * 60000, progress});
+  };
+  // Keep at most one recent analysis per session, plus the currently running analysis.
+  for (const [key, entry] of analysisProgress) if (entry.owner === req.token) analysisProgress.delete(key);
+  report({phase: 'opening', page: 0, pages: 0, percent: 0});
   const manual = req.query.manual === '1';
   if (!manual) analyzing = true;
   try {
@@ -489,7 +505,7 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
       const pdf = await PDFDocument.load(req.file.buffer);
       if (pdf.getPageCount() > 20) throw Error('Il PDF supera 20 pagine.');
       result = {candidates: [], pages: pdf.getPageCount(), ocrPages: 0, manual: true};
-    } else result = await recognizePdf(req.file.buffer);
+    } else result = await recognizePdf(req.file.buffer, report);
     for (const [key, value] of imports) if (value.owner === req.token || value.until < Date.now()) imports.delete(key);
     if (imports.size >= 10) return res.status(429).json({
       error: 'Troppi PDF in attesa di salvataggio. Riprova tra qualche minuto.'
@@ -502,6 +518,7 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
       name: Buffer.from(req.file.originalname, 'latin1').toString('utf8').slice(0, 200),
       until: Date.now() + 30 * 60000
     });
+    report({phase: 'complete', page: result.pages, pages: result.pages, percent: 100});
     res.json({
       ...result,
       importToken: token
@@ -511,6 +528,7 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
       error: e.message
     });
   } finally {
+    if (progressId && analysisProgress.get(progressId)?.progress.phase !== 'complete') report({...analysisProgress.get(progressId)?.progress, phase: 'error'});
     if (!manual) analyzing = false;
   }
 });
