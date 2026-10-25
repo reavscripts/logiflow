@@ -11,8 +11,8 @@ import './operations.css';
 async function api(url, options={}) {
  await window.logiflowBackend?.ensureReady();
  let r;
- try {r=await fetch('/api'+url,{...options,signal:AbortSignal.timeout(150000),headers:options.body instanceof FormData?{}:{'Content-Type':'application/json'}});}
- catch {window.logiflowBackend?.invalidate();throw Error('Connessione interrotta. Verifica lo stato dell’operazione prima di riprovare.');}
+ try {r=await fetch('/api'+url,{...options,signal:options.signal?AbortSignal.any([options.signal,AbortSignal.timeout(150000)]):AbortSignal.timeout(150000),headers:options.body instanceof FormData?{}:{'Content-Type':'application/json'}});}
+ catch(e) {if(options.signal?.aborted)throw e;window.logiflowBackend?.invalidate();throw Error('Connessione interrotta. Verifica lo stato dell’operazione prima di riprovare.');}
  if([502,503,504].includes(r.status))window.logiflowBackend?.invalidate();
  if(!r.headers.get('content-type')?.includes('application/json')){window.logiflowBackend?.invalidate();throw Error('Il server è temporaneamente indisponibile. Verifica lo stato dell’operazione prima di riprovare.');}
  const data=await r.json();if(!r.ok)throw new Error(data.error||'Operazione non riuscita');return data;

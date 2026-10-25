@@ -37,3 +37,12 @@ test('Avanzamento multipagina: ordine delle pagine e percentuale cumulativa',asy
  assert.deepEqual(updates.filter(p=>p.phase==='reading').map(p=>[p.page,p.pages]),[[1,3],[2,3],[3,3]]);
  assert.deepEqual(updates.filter(p=>p.phase==='page-complete').map(p=>p.percent),[33,66,99]);
 });
+
+test('Annullamento prima dell’avvio e durante la scansione',async()=>{
+ const doc=await PDFDocument.create();doc.addPage();const bytes=await doc.save();
+ const already=new AbortController();already.abort();
+ await assert.rejects(recognizePdf(bytes,undefined,{signal:already.signal}),{name:'AbortError'});
+ const controller=new AbortController();const phases=[];
+ await assert.rejects(recognizePdf(bytes,p=>{phases.push(p.phase);if(p.phase==='recognizing')controller.abort();},{signal:controller.signal}),{name:'AbortError'});
+ assert.ok(phases.includes('recognizing'));assert.ok(!phases.includes('finalizing'));
+});

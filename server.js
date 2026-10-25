@@ -64,7 +64,8 @@ function validCodes(body) {
 async function a88Present(id, codes) {
   return codes.length < 2 || !!(await db.prepare("SELECT id FROM documents WHERE dossier_id=? AND category='A88' AND a88_signature=?").get(id, signature(codes)));
 }
-async function checkA88(body, codes, id) {
+async function checkA88(body, codes, id, community = false) {
+  if (community) return;
   if ((body.deposited === true || body.deposited === 1) && codes.length > 1 && !(await a88Present(id || -1, codes))) throw Error('A88 mancante per questo elenco: salva senza deposito, poi carica o genera il modulo.');
 }
 async function replaceCodes(id, codes) {
@@ -309,7 +310,7 @@ app.get('/api/dossiers', async (req, res) => res.json(await Promise.all((await d
     ...(await departureState(db, d.id)),
     departed_codes: (await db.prepare('SELECT container FROM departures WHERE dossier_id=?').all(d.id)).map(r => r.container),
     containers,
-    a88_required: containers.length > 1,
+    a88_required: containers.length > 1 && !d.community,
     a88_available: await a88Present(d.id, containers)
   };
 }))));
@@ -332,12 +333,12 @@ app.post('/api/dossiers', async (req, res) => {
   let stored;
   try {
     const codes = validCodes(req.body);
-    await checkA88(req.body, codes);
     const source = req.body.importToken ? imports.get(req.body.importToken) : null;
     if (req.body.importToken && (!source || source.owner !== req.token || source.until < Date.now())) return res.status(400).json({
       error: 'PDF temporaneo scaduto. Caricalo nuovamente.'
     });
     const values = await fields({...req.body, community: req.body.community ?? source?.community ?? false});
+    await checkA88(req.body, codes, undefined, values[4]);
     if (source) {
       stored = randomBytes(24).toString('hex') + '.pdf';
       await storage.put(stored, source.buffer);
@@ -374,8 +375,8 @@ app.put('/api/dossiers/:id', async (req, res) => {
     const hasExits = await db.prepare('SELECT 1 FROM departures WHERE dossier_id=?').get(id);
     if (hasExits && (signature(codes) !== signature(await codesFor(id)) || Number(req.body.client_id) !== existing.client_id)) throw Error('Con uscite registrate non è possibile cambiare contenitori o cliente della bolla.');
     if ((await db.prepare('SELECT 1 FROM retained_bills WHERE dossier_id=?').get(id)) && (req.body.deposited === true || req.body.deposited === 1)) throw Error('La bolla è trattenuta dalla Guardia di Finanza e non può risultare in cassetta.');
-    await checkA88(req.body, codes, id);
     const values = await fields(req.body, existing);
+    await checkA88(req.body, codes, id, values[4]);
     await db.prepare('UPDATE dossiers SET container=?,client_id=?,released=?,deposited=?,community=?,box=?,binder=?,divider=?,notes=?,updated=? WHERE id=?').run(...values, id);
     await replaceCodes(id, codes);
     await db.exec('COMMIT');
@@ -476,6 +477,18 @@ app.get('/api/analyze-pdf/:id/progress', (req, res) => {
   if (!entry || entry.owner !== req.token || entry.until < Date.now()) return res.status(404).json({error: 'Analisi non disponibile.'});
   res.json(entry.progress);
 });
+app.delete('/api/analyze-pdf/:id', limit, (req, res) => {
+  if (!/^[a-zA-Z0-9-]{16,80}$/.test(req.params.id)) return res.status(400).json({error: 'Identificativo analisi non valido.'});
+  const entry = analysisProgress.get(req.params.id);
+  if (entry && entry.owner !== req.token) return res.status(404).json({error: 'Analisi non disponibile.'});
+  if (entry?.controller) entry.controller.abort();
+  // Remember cancellation during upload too: a proxy may forward the PDF later.
+  if (!entry) {
+    for (const [key, value] of analysisProgress) if (value.owner === req.token && !value.controller && value.progress.phase !== 'cancelled') analysisProgress.delete(key);
+    analysisProgress.set(req.params.id, {owner: req.token, until: Date.now() + 5 * 60000, progress: {phase: 'cancelled', page: 0, pages: 0, percent: 0}});
+  }
+  res.json({ok: true});
+});
 app.post('/api/analyze-pdf', limit, (req, res, next) => {
   if (analyzing && req.query.manual !== '1') return res.status(429).json({
     error: 'È già in corso un’analisi PDF. Riprova tra poco.'
@@ -491,11 +504,15 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
   const progressId = req.query.progressId;
   if (progressId !== undefined && (typeof progressId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(progressId))) return res.status(400).json({error: 'Identificativo analisi non valido.'});
   if (progressId && analysisProgress.has(progressId)) return res.status(409).json({error: 'Identificativo analisi già utilizzato.'});
+  const controller = new AbortController();
+  const disconnected = () => {if (!res.writableEnded) controller.abort();};
+  res.on('close', disconnected);
+  if (req.aborted || res.destroyed) controller.abort();
   const report = progress => {
-    if (progressId) analysisProgress.set(progressId, {owner: req.token, until: Date.now() + 5 * 60000, progress});
+    if (progressId) analysisProgress.set(progressId, {owner: req.token, until: Date.now() + 5 * 60000, progress, controller});
   };
-  // Keep at most one recent analysis per session, plus the currently running analysis.
-  for (const [key, entry] of analysisProgress) if (entry.owner === req.token) analysisProgress.delete(key);
+  // Preserve cancellation markers until expiry, including when a new upload starts.
+  for (const [key, entry] of analysisProgress) if (entry.owner === req.token && !entry.controller && entry.progress.phase !== 'cancelled') analysisProgress.delete(key);
   report({phase: 'opening', page: 0, pages: 0, percent: 0});
   const manual = req.query.manual === '1';
   if (!manual) analyzing = true;
@@ -505,7 +522,8 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
       const pdf = await PDFDocument.load(req.file.buffer);
       if (pdf.getPageCount() > 20) throw Error('Il PDF supera 20 pagine.');
       result = {candidates: [], pages: pdf.getPageCount(), ocrPages: 0, manual: true};
-    } else result = await recognizePdf(req.file.buffer, report);
+    } else result = await recognizePdf(req.file.buffer, report, {signal: controller.signal});
+    controller.signal.throwIfAborted();
     for (const [key, value] of imports) if (value.owner === req.token || value.until < Date.now()) imports.delete(key);
     if (imports.size >= 10) return res.status(429).json({
       error: 'Troppi PDF in attesa di salvataggio. Riprova tra qualche minuto.'
@@ -528,7 +546,9 @@ app.post('/api/analyze-pdf', limit, (req, res, next) => {
       error: e.message
     });
   } finally {
-    if (progressId && analysisProgress.get(progressId)?.progress.phase !== 'complete') report({...analysisProgress.get(progressId)?.progress, phase: 'error'});
+    res.off('close', disconnected);
+    if (progressId && analysisProgress.get(progressId)?.progress.phase !== 'complete') report({...analysisProgress.get(progressId)?.progress, phase: controller.signal.aborted ? 'cancelled' : 'error'});
+    if (progressId) delete analysisProgress.get(progressId)?.controller;
     if (!manual) analyzing = false;
   }
 });

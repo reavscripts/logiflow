@@ -91,3 +91,7 @@ Durante l’importazione del PDF, LogiFlow cerca T2L/T2LF e indicazioni esplicit
 Tutti i contenitori delle operazioni comunitarie sono esclusi dalla selezione, dal conteggio e dai nuovi PDF fuori orario. Il server verifica lo stato anche alla generazione, mentre le liste storiche restano invariate.
 
 Durante l’analisi PDF vengono mostrati secondi trascorsi, fase corrente, pagina e percentuale complessiva, aggiornata dalla lettura effettiva delle pagine e dal riconoscimento OCR. Prima di conoscere il numero di pagine la barra è indeterminata. Il 100% indica che il risultato è pronto.
+
+Chiudendo la finestra di importazione, la richiesta viene annullata e il server termina la scansione in corso. L’annullamento copre anche il PDF ancora in caricamento; una scansione annullata non produce un documento temporaneo da salvare.
+
+Per le operazioni comunitarie/T2L l’A88 non è richiesto, anche con più contenitori: il deposito è consentito senza modulo e l’interfaccia non segnala A88 mancante. Rimuovendo la spunta COMUNITARIO, torna obbligatorio per le bolle multiple. Gli eventuali A88 già allegati restano consultabili.

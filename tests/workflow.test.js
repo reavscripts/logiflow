@@ -105,15 +105,45 @@ test('Fascicolo, deposito, PDF e separazione degli accessi', async () => {
   r=await call('/dossiers');assert.equal((await r.json()).find(d=>d.id===multiId).community,1);
   r=await call(`/dossiers/${multiId}`,'PUT',{...multi,community:false});assert.equal(r.status,200);
   r=await call('/fuori-orario');assert.ok((await r.json()).candidates.some(c=>c.code===multi.containers[0]));
-  const communityPdf=await PDFDocument.create();communityPdf.addPage().drawText('T2L Container TEST1234567',{x:40,y:500,size:20});
+  const communityPdf=await PDFDocument.create();communityPdf.addPage().drawText('T2L Container TEST1234567 TEST7654321',{x:40,y:500,size:20});
   const communityInput=new FormData();communityInput.append('file',new Blob([await communityPdf.save()]),'t2l.pdf');
   r=await fetch(base+'/analyze-pdf?progressId=test-community-progress',{method:'POST',headers:{Cookie:cookie},body:communityInput});assert.equal(r.status,200);const detected=await r.json();assert.equal(detected.community,true);
   r=await call('/analyze-pdf/test-community-progress/progress');assert.equal(r.status,200);assert.deepEqual(await r.json(),{phase:'complete',page:1,pages:1,percent:100});
   r=await fetch(base+'/analyze-pdf/test-community-progress/progress');assert.equal(r.status,401);
   r=await call('/analyze-pdf/not-existing-progress/progress');assert.equal(r.status,404);
-  r=await call('/dossiers','POST',{container:'TEST1234567',client_id:clients[0].id,importToken:detected.importToken});assert.equal(r.status,201);const communityId=(await r.json()).id;
-  r=await call('/dossiers');assert.equal((await r.json()).find(d=>d.id===communityId).community,1);
+  r=await call('/dossiers','POST',{...item,containers:['TEST1234567','TEST7654321'],deposited:true,importToken:detected.importToken});assert.equal(r.status,201);const communityId=(await r.json()).id;
+  r=await call('/dossiers');const communityRow=(await r.json()).find(d=>d.id===communityId);assert.equal(communityRow.community,1);assert.equal(communityRow.deposited,1);assert.equal(communityRow.a88_required,false);assert.equal(communityRow.a88_available,false);
+  r=await call(`/dossiers/${communityId}`,'PUT',{...communityRow,community:undefined});assert.equal(r.status,200);
+  r=await call(`/dossiers/${communityId}`,'PUT',{...communityRow,community:false});assert.equal(r.status,400);assert.match((await r.json()).error,/A88 mancante/);
+  r=await call(`/dossiers/${communityId}`,'PUT',{...communityRow,community:false,deposited:false});assert.equal(r.status,200);
+  r=await call('/dossiers');assert.equal((await r.json()).find(d=>d.id===communityId).a88_required,true);
+  r=await call(`/dossiers/${communityId}`,'PUT',{...communityRow,community:true});assert.equal(r.status,200);
+  r=await call('/dossiers','POST',{...item,containers:['TEST1111111','TEST2222222'],community:true,deposited:true});assert.equal(r.status,201);
+
   r=await call('/fuori-orario');assert.ok(!(await r.json()).candidates.some(c=>c.code==='TEST1234567'));
+  // Cancellation is authenticated and also covers an upload arriving after its dialog closed.
+  r=await fetch(base+'/analyze-pdf/cancel-before-upload',{method:'DELETE'});assert.equal(r.status,401);
+  r=await call('/analyze-pdf/cancel-before-upload','DELETE');assert.equal(r.status,200);
+  r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);
+  r=await fetch(base+'/analyze-pdf?progressId=cancel-before-upload',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,409);
+  const slow=await PDFDocument.create();for(let i=0;i<20;i++)slow.addPage();
+  const slowInput=new FormData();slowInput.append('file',new Blob([await slow.save()]),'scan.pdf');
+  const waitFor=async(predicate)=>{for(let i=0;i<200;i++){if(await predicate())return;await new Promise(resolve=>setTimeout(resolve,25));}throw Error('Cancellation timeout');};
+  const ongoing=fetch(base+'/analyze-pdf?progressId=cancel-running-scan',{method:'POST',headers:{Cookie:cookie},body:slowInput});
+  await waitFor(async()=>{const r=await call('/analyze-pdf/cancel-running-scan/progress');return r.ok&&(await r.json()).page>0;});
+  const otherLogin=await fetch(base+'/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'operatore',password:'test-password'})});
+  const otherCookie=otherLogin.headers.get('set-cookie').split(';')[0];
+  r=await fetch(base+'/analyze-pdf/cancel-running-scan',{method:'DELETE',headers:{Cookie:otherCookie}});assert.equal(r.status,404);
+  r=await call('/analyze-pdf/cancel-running-scan','DELETE');assert.equal(r.status,200);
+  assert.equal((await ongoing).status,400);
+  r=await call('/analyze-pdf/cancel-running-scan/progress');assert.equal((await r.json()).phase,'cancelled');
+  r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);
+  const disconnected=new AbortController();
+  const abandoned=fetch(base+'/analyze-pdf?progressId=cancel-disconnected-scan',{method:'POST',headers:{Cookie:cookie},body:slowInput,signal:disconnected.signal}).catch(e=>e);
+  await waitFor(async()=>{const r=await call('/analyze-pdf/cancel-disconnected-scan/progress');return r.ok&&(await r.json()).page>0;});
+  disconnected.abort();assert.equal((await abandoned).name,'AbortError');
+  await waitFor(async()=>{const r=await call('/analyze-pdf/cancel-disconnected-scan/progress');return r.ok&&(await r.json()).phase==='cancelled';});
+  r=await fetch(base+'/analyze-pdf',{method:'POST',headers:{Cookie:cookie},body:input});assert.equal(r.status,200);
   await call('/logout','POST');r=await call('/dossiers');assert.equal(r.status,401);
  } finally {child.kill();await new Promise(resolve=>child.once('exit',resolve));await rm(dir,{recursive:true,force:true});}
 });
