@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {Upload,FileText,Check,ArrowUpRight,LoaderCircle,Info} from 'lucide-react';
+import {Upload,FileText,Check,ArrowUpRight,LoaderCircle,Info,Keyboard,ScanLine,ArrowRight} from 'lucide-react';
 
 const scanPhases={uploading:'Caricamento PDF',opening:'Apertura PDF',reading:'Lettura del testo',preparing:'Preparazione della scansione',rendering:'Preparazione immagine della pagina',recognizing:'Riconoscimento del testo nella scansione',
  'page-complete':'Pagina elaborata',finalizing:'Verifica dei risultati',complete:'Analisi completata',error:'Analisi interrotta'};
@@ -12,7 +12,7 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
  const [scanProgress,setScanProgress]=useState(null);
  const progressRun=React.useRef(null);
  React.useEffect(()=>()=>{if(progressRun.current){const run=progressRun.current;run.active=false;clearTimeout(run.timer);run.controller.abort();void api(`/analyze-pdf/${run.id}`,{method:'DELETE',keepalive:true}).catch(()=>{});}},[]);
- const [manual,setManual]=useState(false),[selectedPdf,setSelectedPdf]=useState(null),[elapsed,setElapsed]=useState(0);
+ const [manual,setManual]=useState(true),[selectedPdf,setSelectedPdf]=useState(null),[elapsed,setElapsed]=useState(0);
  React.useEffect(()=>{if(!analyzing)return;setElapsed(0);const start=Date.now();const timer=setInterval(()=>setElapsed(Math.floor((Date.now()-start)/1000)),1000);return ()=>clearInterval(timer);},[analyzing]);
  const containers=containerText.toUpperCase().split(/[\s,;]+/).filter(Boolean);
  const multi=containers.length>1;
@@ -21,6 +21,8 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
  const listSaved=codeSignature===[...(savedItem.containers||[savedItem.container])].sort().join(',');
  const a88Available=docs.some(d=>d.category==='A88'&&d.a88_signature===codeSignature);
  const [source,setSource]=useState(null),[candidates,setCandidates]=useState([]),[verified,setVerified]=useState(false),[dragging,setDragging]=useState(false);
+ const containerInput=React.useRef(null);
+ React.useEffect(()=>{if(source?.manual)containerInput.current?.focus();},[source]);
  const customer=clients.find(c=>String(c.id)===String(item.client_id));
  const currentBox=item.deposited&&savedItem.deposited&&String(item.client_id)===String(savedItem.client_id)?savedItem.box:customer?.box||'';
  const change=(key,value)=>{setItem(s=>({...s,[key]:value}));setMessage('');};
@@ -28,10 +30,13 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
  React.useEffect(()=>{if(initial.id)load(initial.id).catch(e=>setError(e.message));},[initial.id]);
  async function analyze(selected,skipRecognition=manual) {
   if(busy||analyzing)return;
-  setError('');setMessage('');setSource(null);setCandidates([]);setVerified(false);setContainerText('');change('container','');
+  setError('');
+  if(!selected.length)return;
   if(selected.length!==1){setError('Seleziona un solo PDF per creare l’operazione.');return;}
   const file=selected[0];
   if(!file.name.toLowerCase().endsWith('.pdf')||file.size>20*1024*1024){setError('Carica un PDF di massimo 20 MB.');return;}
+  setError('');setMessage('');setSource(null);setCandidates([]);setVerified(false);setContainerText('');change('container','');
+  change('deposited',false);
   setSelectedPdf(file);setAnalyzing(true);setScanProgress({phase:'uploading',page:0,pages:0,percent:0});
   const progressId=crypto.randomUUID();
   const run={active:true,timer:null,id:progressId,controller:new AbortController()};progressRun.current=run;
@@ -58,30 +63,37 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
    await load(updated.id);
   }catch(e){setError(e.message);}finally{setBusy(false);}
  }
- return <Modal wide title={item.id?item.container:'Nuovo'} close={close}>
+ return <Modal wide title={item.id?item.container:'Nuova operazione'} close={close}>
   {!item.id&&<section className="pdf-import">
-   <label className={`upload-zone import-zone ${dragging?'dragging':''}`} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);analyze(Array.from(e.dataTransfer.files));}}>
-    {analyzing?<LoaderCircle size={28} className="spin"/>:<Upload size={28}/>}
-    <strong>{analyzing?(manual?'Caricamento PDF…':'Lettura del PDF e riconoscimento contenitore…'):'Trascina qui il PDF o seleziona un file'}</strong>
-    <span>Riconoscimento automatico del contenitore · PDF fino a 20 MB e 20 pagine</span>
-    <input aria-label="PDF da analizzare" type="file" accept=".pdf,application/pdf" disabled={analyzing||busy} onChange={e=>{analyze(Array.from(e.target.files));e.target.value='';}}/>
+   <div className="import-intro"><span className="eyebrow">PARTI DALLA BOLLA</span><h3>Un solo contenitore? Scrivilo direttamente.</h3><p>Allega il PDF e inserisci il codice: con una bolla singola è più immediato, senza attendere la scansione.</p></div>
+   <fieldset className="import-methods" disabled={busy||analyzing||!!source}><legend>Come vuoi inserire i contenitori?</legend>
+    <label className={'import-method '+(manual?'is-selected':'')}><input type="radio" name="import-method" value="manual" checked={manual} onChange={()=>setManual(true)}/><span className="method-icon"><Keyboard size={23}/></span><span className="method-title">Inserimento manuale<span className="method-tag">Consigliato · 1 contenitore</span></span><span className="method-description">Digita o incolla il codice della bolla. Il PDF viene allegato senza scansione.</span><span className="method-choice">{manual?'Selezionato':'Scegli manuale'}<Check size={15}/></span></label>
+    <label className={'import-method '+(!manual?'is-selected':'')}><input type="radio" name="import-method" value="automatic" checked={!manual} onChange={()=>setManual(false)}/><span className="method-icon"><ScanLine size={23}/></span><span className="method-title">Riconoscimento automatico<span className="method-tag secondary-tag">Utile · Più contenitori</span></span><span className="method-description">Leggiamo i codici dal PDF. Le scansioni possono richiedere fino a circa 2 minuti.</span><span className="method-choice">{!manual?'Selezionato':'Scegli automatico'}<Check size={15}/></span></label>
+   </fieldset>
+   {!source&&<div className="import-next"><span className="import-step">1</span><span>{manual?'Allega il PDF, poi inserisci il codice':'Allega il PDF per avviare il riconoscimento'}</span><ArrowRight size={16}/></div>}
+   <label className={`upload-zone import-zone modern-import ${dragging?'dragging':''} ${analyzing?'is-busy':''}`} onDragOver={e=>{e.preventDefault();if(!analyzing&&!busy)setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={e=>{e.preventDefault();setDragging(false);analyze(Array.from(e.dataTransfer.files));}}>
+    <span className="import-upload-icon">{analyzing?<LoaderCircle size={26} className="spin"/>:<Upload size={26}/>}</span>
+    <strong>{analyzing?(manual?'Caricamento del PDF…':'Analisi del PDF in corso…'):source?'Sostituisci il PDF':'Trascina qui la tua bolla'}</strong>
+    <span>{analyzing?'Puoi chiudere questa finestra per annullare.':'oppure scegli un file dal dispositivo'}</span>
+    {!analyzing&&<span className="import-file-button">{source?'Scegli un altro PDF':'Scegli PDF'}<ArrowRight size={16}/></span>}
+    <small>PDF · Massimo 20 MB · Fino a 20 pagine</small>
+    <input aria-label="Carica PDF della bolla" type="file" accept=".pdf,application/pdf" disabled={analyzing||busy} onChange={e=>{analyze(Array.from(e.target.files));e.target.value='';}}/>
    </label>
-   {analyzing&&<div role="status"><p className="hint">{selectedPdf?.name} · Attesa: {elapsed}s</p><p className="hint">{scanPhases[scanProgress?.phase]||'Caricamento PDF'}{scanProgress?.pages>0?` · Pagina ${scanProgress.page} di ${scanProgress.pages} · ${scanProgress.percent}%`:"…"}</p><progress className="scan-progress" aria-label="Avanzamento analisi PDF" max="100" value={scanProgress?.pages>0?scanProgress.percent:undefined}/><p className="hint">Le scansioni richiedono più tempo. L’analisi può durare fino a circa 2 minuti; al termine potrai verificare i codici.</p>{elapsed>=30&&<p className="hint">Il riconoscimento è ancora in corso. Se non riesce, potrai caricare il PDF senza riconoscimento e inserire i contenitori manualmente.</p>}</div>}
-   {!analyzing&&<label className="check-label"><input type="checkbox" checked={manual} disabled={busy} onChange={e=>setManual(e.target.checked)}/>Inserisci i contenitori manualmente (salta il riconoscimento)</label>}
+   {analyzing&&<div className="import-progress" role="status"><p className="hint">{selectedPdf?.name} · Attesa: {elapsed}s</p><p className="hint">{scanPhases[scanProgress?.phase]||'Caricamento PDF'}{scanProgress?.pages>0?` · Pagina ${scanProgress.page} di ${scanProgress.pages} · ${scanProgress.percent}%`:"…"}</p><progress className="scan-progress" aria-label="Avanzamento analisi PDF" max="100" value={scanProgress?.pages>0?scanProgress.percent:undefined}/>{!manual&&elapsed>=30&&<p className="hint">Stiamo ancora leggendo la scansione. Al termine potrai verificare e correggere i codici.</p>}</div>}
    {!analyzing&&!source&&selectedPdf&&error&&<button type="button" className="secondary full" disabled={busy} onClick={()=>{setManual(true);analyze([selectedPdf],true);}}>Continua con lo stesso PDF e inserisci i codici manualmente</button>}
-   {source&&<div className="import-result" role="status"><FileText size={19}/><div><strong>{source.name}</strong><small>{source.pages} pagine lette{source.ocrPages?` · OCR su ${source.ocrPages} pagine`:''} · PDF allegato al salvataggio</small></div></div>}
+   {source&&<div className="import-result" role="status"><FileText size={19}/><div><strong>{source.name}</strong><small>{source.pages} pagine{source.manual?' · Inserimento manuale':' analizzate'}{source.ocrPages?` · OCR su ${source.ocrPages} pagine`:''} · PDF allegato al salvataggio</small></div></div>}
   </section>}
   {(item.id||source)&&<form onSubmit={save}>
    {source&&!item.id&&<>
     {!!source.containerSourcePages?.length&&<p className="hint">Contenitori selezionati dal T2L · Pagine {source.containerSourcePages.join(', ')}.</p>}
     {!!source.excludedCandidates?.length&&<details className="hint"><summary>Altri {source.excludedCandidates.length} codici rilevati negli allegati, esclusi dal conteggio</summary><p>{source.excludedCandidates.join(', ')}</p><p>Aggiungili solo se presenti anche nella bolla T2L.</p></details>}
     {source.selectionWarning&&<p className="alert" role="status">{source.selectionWarning}</p>}
-    {!candidates.length&&<p className="import-info" role="status"><Info size={19} aria-hidden="true"/><span>{source.manual?"PDF caricato. Inserisci i contenitori della bolla e verifica i codici prima di salvare.":"Nessun numero contenitore riconosciuto. Puoi inserire i contenitori della bolla manualmente oppure caricare una scansione più leggibile."}</span></p>}
+    {!candidates.length&&<p className="import-info" role="status"><Info size={19} aria-hidden="true"/><span>{source.manual?"PDF pronto. Digita o incolla il codice della bolla qui sotto, poi scegli il cliente.":"Nessun numero contenitore riconosciuto. Puoi inserire i contenitori della bolla manualmente oppure caricare una scansione più leggibile."}</span></p>}
    </>}
-   <div className="form-grid"><label>Contenitori in bolla ({containers.length})<textarea required rows={Math.min(6,Math.max(2,containers.length))} value={containerText} placeholder={'HLBU8225693\nCAIU4229738'} onChange={e=>{setContainerText(e.target.value.toUpperCase());setVerified(false);change('deposited',false);}}/><small className="hint">Un codice per riga. Aggiungi o correggi tutti i contenitori della bolla.</small></label>
+   <div className="form-grid"><label>Contenitori in bolla ({containers.length})<textarea ref={containerInput} required rows={Math.min(6,Math.max(2,containers.length))} value={containerText} placeholder={'HLBU8225693\nCAIU4229738'} onChange={e=>{setContainerText(e.target.value.toUpperCase());setVerified(false);change('deposited',false);}}/><small className="hint">Un codice per riga. Aggiungi o correggi tutti i contenitori della bolla.</small></label>
     <label>Cliente<select required value={item.client_id} onChange={e=>{setItem(s=>({...s,client_id:e.target.value,deposited:false}));setMessage('');}}><option value="">Seleziona cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label></div>
    {!item.id&&<label className="check-label verify-code"><input type="checkbox" required checked={verified} onChange={e=>setVerified(e.target.checked)}/>Ho verificato tutti i contenitori sul PDF</label>}
-   <div className="check-panel"><label className="check-label"><input type="checkbox" checked={!!item.community} disabled={busy||analyzing} onChange={e=>change('community',e.target.checked)}/>COMUNITARIO</label><p className="hint">Per le operazioni comunitarie/T2L non serve il modulo A88. I contenitori sono esclusi dal conteggio e dai documenti del fuori orario.</p>{source?.communityEvidence&&<p className="hint">Riconosciuto nel PDF: {source.communityEvidence}. Puoi correggere la spunta prima di salvare.</p>}</div>
+   <div className="check-panel"><label className="check-label"><input type="checkbox" checked={!!item.community} disabled={busy||analyzing} onChange={e=>change('community',e.target.checked)}/>COMUNITARIO</label><p className="hint">{source?.manual?'Se la bolla è un T2L, attiva questa spunta. ':''}Per le operazioni comunitarie/T2L non serve il modulo A88. I contenitori sono esclusi dal conteggio e dai documenti del fuori orario.</p>{source?.communityEvidence&&<p className="hint">Riconosciuto nel PDF: {source.communityEvidence}. Puoi correggere la spunta prima di salvare.</p>}</div>
    <div className="check-panel"><label className="check-label"><input type="checkbox" checked={!!item.deposited} disabled={a88Required&&!a88Available} onChange={e=>change('deposited',e.target.checked)}/>Operazione depositata in cassetta</label></div>
    <div className="form-grid thirds">{[['box','Cassetta cliente','Configura in Clienti'],['binder','Fascicolo cartaceo','Es. 03'],['divider','Separatore','Es. 12']].map(([key,label,placeholder])=><label key={key}>{label}<input value={key==='box'?currentBox:item[key]} readOnly={key==='box'} required={!!item.deposited} maxLength={key==='box'?243:80} placeholder={placeholder} onChange={e=>change(key,e.target.value)}/></label>)}</div>
    <label>Note interne<textarea value={item.notes} maxLength={2000} rows={2} placeholder="Indicazioni per gli operatori" onChange={e=>change('notes',e.target.value)}/></label>
