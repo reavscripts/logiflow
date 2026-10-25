@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {Upload,FileText,Check,ArrowUpRight,LoaderCircle} from 'lucide-react';
+import {Upload,FileText,Check,ArrowUpRight,LoaderCircle,Info} from 'lucide-react';
 
 const scanPhases={uploading:'Caricamento PDF',opening:'Apertura PDF',reading:'Lettura del testo',preparing:'Preparazione della scansione',rendering:'Preparazione immagine della pagina',recognizing:'Riconoscimento del testo nella scansione',
  'page-complete':'Pagina elaborata',finalizing:'Verifica dei risultati',complete:'Analisi completata',error:'Analisi interrotta'};
@@ -76,7 +76,7 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
     {!!source.containerSourcePages?.length&&<p className="hint">Contenitori selezionati dal T2L · Pagine {source.containerSourcePages.join(', ')}.</p>}
     {!!source.excludedCandidates?.length&&<details className="hint"><summary>Altri {source.excludedCandidates.length} codici rilevati negli allegati, esclusi dal conteggio</summary><p>{source.excludedCandidates.join(', ')}</p><p>Aggiungili solo se presenti anche nella bolla T2L.</p></details>}
     {source.selectionWarning&&<p className="alert" role="status">{source.selectionWarning}</p>}
-    {!candidates.length&&<p className="alert">{source.manual?"PDF caricato. Inserisci tutti i contenitori presenti nel documento e verifica i codici prima di salvare.":"Nessun numero contenitore riconosciuto. Puoi inserire tutti i numeri dal documento oppure caricare una scansione più leggibile."}</p>}
+    {!candidates.length&&<p className="import-info" role="status"><Info size={19} aria-hidden="true"/><span>{source.manual?"PDF caricato. Inserisci i contenitori della bolla e verifica i codici prima di salvare.":"Nessun numero contenitore riconosciuto. Puoi inserire i contenitori della bolla manualmente oppure caricare una scansione più leggibile."}</span></p>}
    </>}
    <div className="form-grid"><label>Contenitori in bolla ({containers.length})<textarea required rows={Math.min(6,Math.max(2,containers.length))} value={containerText} placeholder={'HLBU8225693\nCAIU4229738'} onChange={e=>{setContainerText(e.target.value.toUpperCase());setVerified(false);change('deposited',false);}}/><small className="hint">Un codice per riga. Aggiungi o correggi tutti i contenitori della bolla.</small></label>
     <label>Cliente<select required value={item.client_id} onChange={e=>{setItem(s=>({...s,client_id:e.target.value,deposited:false}));setMessage('');}}><option value="">Seleziona cliente</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label></div>
