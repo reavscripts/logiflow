@@ -73,6 +73,9 @@ export default function OperationEditor({initial,clients,close,done,api,Modal}) 
   </section>}
   {(item.id||source)&&<form onSubmit={save}>
    {source&&!item.id&&<>
+    {!!source.containerSourcePages?.length&&<p className="hint">Contenitori selezionati dal T2L · Pagine {source.containerSourcePages.join(', ')}.</p>}
+    {!!source.excludedCandidates?.length&&<details className="hint"><summary>Altri {source.excludedCandidates.length} codici rilevati negli allegati, esclusi dal conteggio</summary><p>{source.excludedCandidates.join(', ')}</p><p>Aggiungili solo se presenti anche nella bolla T2L.</p></details>}
+    {source.selectionWarning&&<p className="alert" role="status">{source.selectionWarning}</p>}
     {!candidates.length&&<p className="alert">{source.manual?"PDF caricato. Inserisci tutti i contenitori presenti nel documento e verifica i codici prima di salvare.":"Nessun numero contenitore riconosciuto. Puoi inserire tutti i numeri dal documento oppure caricare una scansione più leggibile."}</p>}
    </>}
    <div className="form-grid"><label>Contenitori in bolla ({containers.length})<textarea required rows={Math.min(6,Math.max(2,containers.length))} value={containerText} placeholder={'HLBU8225693\nCAIU4229738'} onChange={e=>{setContainerText(e.target.value.toUpperCase());setVerified(false);change('deposited',false);}}/><small className="hint">Un codice per riga. Aggiungi o correggi tutti i contenitori della bolla.</small></label>

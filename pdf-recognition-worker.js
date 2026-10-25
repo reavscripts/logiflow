@@ -3,7 +3,8 @@ import { createCanvas } from '@napi-rs/canvas';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createWorker } from 'tesseract.js';
 import english from '@tesseract.js-data/eng';
-import { findContainers, consolidateCandidates } from './container-recognition.js';
+import { findContainers } from './container-recognition.js';
+import { selectDocumentContainers } from './document-containers.js';
 import { fileURLToPath } from 'node:url';
 import { recognizeCommunity } from './community-recognition.js';
 
@@ -18,12 +19,12 @@ try {
  progress('opening');
  task=getDocument({wasmUrl:fileURLToPath(new URL('./node_modules/pdfjs-dist/wasm/',import.meta.url)).replaceAll('\\','/'),data:new Uint8Array(workerData),isEvalSupported:false,standardFontDataUrl:fileURLToPath(new URL('./node_modules/pdfjs-dist/standard_fonts/',import.meta.url)).replaceAll('\\','/')});pdf=await task.promise;
  if(pdf.numPages>20)throw Error('Il PDF supera 20 pagine. Carica un documento più breve.');
- const candidates=new Set();let scannedPages=0, communityEvidence='';
+ const pageResults=[];let scannedPages=0, communityEvidence='';
  for(let n=1;n<=pdf.numPages;n++) {
   currentPage=n;progress('reading');
   const page=await pdf.getPage(n);
   const content=await page.getTextContent();
-  const text=content.items.map(item=>item.str||'').join(' ');
+  let text=content.items.map(item=>item.str||'').join(' ');
   communityEvidence ||= recognizeCommunity(text);
   let found=findContainers(text);
   if(!found.length) {
@@ -40,13 +41,14 @@ try {
    progress('recognizing',0.3);
    const result=await ocr.recognize(canvas.toBuffer('image/png'));
    communityEvidence ||= recognizeCommunity(result.data.text);
+   text+='\n'+result.data.text;
    found=findContainers(result.data.text);scannedPages++;
   }
-  found.forEach(code=>candidates.add(code));page.cleanup();
+  pageResults.push({page:n,text,candidates:found});page.cleanup();
   progress('page-complete',1);
  }
  progress('finalizing',1);
- parentPort.postMessage({candidates:consolidateCandidates([...candidates]),pages:pdf.numPages,ocrPages:scannedPages,community:!!communityEvidence,communityEvidence});
+ parentPort.postMessage({...selectDocumentContainers(pageResults),pages:pdf.numPages,ocrPages:scannedPages,community:!!communityEvidence,communityEvidence});
 } catch(e) {
  console.error('PDF recognition:',e.message);
  parentPort.postMessage({error:e.name==='PasswordException'?'Il PDF è protetto da password. Carica una copia non protetta.':e.message?.includes('20 pagine')?e.message:'Impossibile leggere il PDF. Verifica che sia valido e non danneggiato.'});

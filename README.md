@@ -95,3 +95,5 @@ Durante l’analisi PDF vengono mostrati secondi trascorsi, fase corrente, pagin
 Chiudendo la finestra di importazione, la richiesta viene annullata e il server termina la scansione in corso. L’annullamento copre anche il PDF ancora in caricamento; una scansione annullata non produce un documento temporaneo da salvare.
 
 Per le operazioni comunitarie/T2L l’A88 non è richiesto, anche con più contenitori: il deposito è consentito senza modulo e l’interfaccia non segnala A88 mancante. Rimuovendo la spunta COMUNITARIO, torna obbligatorio per le bolle multiple. Gli eventuali A88 già allegati restano consultabili.
+
+Se il PDF contiene un T2L riconosciuto come «Status Registration Document», vengono proposti i contenitori delle pagine della dichiarazione. I codici degli allegati di spedizione sono mostrati separatamente ed esclusi dal conteggio. La stessa sigla ripetuta per più voci merce conta una sola volta. In caso di identificazione incerta o codici illeggibili compare una richiesta di verifica manuale.
